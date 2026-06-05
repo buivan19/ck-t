@@ -1,0 +1,13 @@
+HTTP/1.1 200 OK
+X-Powered-By: Express
+Access-Control-Allow-Origin: http://localhost:5173
+Vary: Origin
+Access-Control-Allow-Credentials: true
+Access-Control-Expose-Headers: Content-Disposition
+Content-Type: text/csv; charset=utf-8
+Content-Disposition: attachment; filename="sensor_logs_f660b7c9-6085-11f1-b2a1-502e91c80f71_1780627034960.csv"
+Date: Fri, 05 Jun 2026 02:37:14 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+Transfer-Encoding: chunked
+

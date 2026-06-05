@@ -10,7 +10,7 @@ const User = sequelize.define('User', {
   name: { type: DataTypes.STRING(150), allowNull: false },
   email: { type: DataTypes.STRING(255), allowNull: false, unique: true },
   password_hash: { type: DataTypes.STRING(255), allowNull: false },
-  role: { type: DataTypes.ENUM('staff', 'admin'), defaultValue: 'staff' }
+  role: { type: DataTypes.ENUM('engineer', 'doctor', 'patient', 'admin'), defaultValue: 'patient' }
 }, {
   tableName: 'users',
   timestamps: true,

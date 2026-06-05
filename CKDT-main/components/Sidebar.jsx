@@ -26,9 +26,9 @@ const IconSettings = () => (
     <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
   </svg>
 )
-const IconPulse = () => (
+const IconHeart = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
   </svg>
 )
 const IconLogout = () => (
@@ -40,20 +40,22 @@ const IconLogout = () => (
 )
 
 export default function Sidebar() {
-  const { notifications } = useApp()
+  const { diagnoses } = useApp()
   const { user, logout }  = useAuth()
-  const newAlerts = notifications.length
+  
+  // Badge counts urgent diagnoses
+  const newAlerts = (diagnoses || []).filter(d => d.alert_type === 'urgent').length
 
   return (
-    <aside className="sidebar">
+    <aside className="sidebar" style={{ background: '#0f172a' }}>
       {/* Brand */}
       <div className="sidebar-brand">
-        <div className="sidebar-brand-icon">
-          <IconPulse />
+        <div className="sidebar-brand-icon" style={{ background: '#ef4444' }}>
+          <IconHeart />
         </div>
         <div className="sidebar-brand-text">
-          <div className="sup">Hệ thống</div>
-          <div className="title">GIÁM SÁT<br/>TRUYỀN DỊCH</div>
+          <div className="sup" style={{ color: '#94a3b8' }}>Hệ thống</div>
+          <div className="title" style={{ color: '#f8fafc' }}>THEO DÕI<br/>MỀ ĐAY</div>
         </div>
       </div>
 
@@ -62,7 +64,7 @@ export default function Sidebar() {
         {[
           { to: '/',           label: 'Tổng quan',  Icon: IconHome },
           { to: '/benh-nhan',  label: 'Bệnh nhân',  Icon: IconUser },
-          { to: '/thong-bao',  label: 'Thông báo',  Icon: IconBell, badge: newAlerts },
+          { to: '/thong-bao',  label: 'Nhật ký chẩn đoán',  Icon: IconBell, badge: newAlerts },
           { to: '/cai-dat',    label: 'Cài đặt',    Icon: IconSettings },
         ].map(({ to, label, Icon, badge }) => (
           <NavLink
@@ -70,6 +72,10 @@ export default function Sidebar() {
             to={to}
             end={to === '/'}
             className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+            style={({ isActive }) => ({
+              background: isActive ? 'rgba(239, 68, 68, 0.15)' : 'transparent',
+              color: isActive ? '#ef4444' : '#94a3b8'
+            })}
           >
             <Icon />
             <span style={{ flex: 1 }}>{label}</span>
@@ -92,7 +98,7 @@ export default function Sidebar() {
         padding: '14px 16px',
       }}>
         <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginBottom: 2 }}>
-          Đang đăng nhập
+          Đang đăng nhập ({user?.role === 'doctor' ? 'Bác sĩ' : user?.role === 'engineer' ? 'Kỹ sư' : 'Bệnh nhân'})
         </div>
         <div style={{ fontSize: 13, fontWeight: 500, color: '#fff', marginBottom: 10 }}>
           {user?.name || ''}

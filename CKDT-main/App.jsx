@@ -7,9 +7,12 @@ import Patients                  from './pages/Patients'
 import Notifications             from './pages/Notifications'
 import Settings                  from './pages/Settings'
 import LoginPage                 from './pages/LoginPage'
+import RegisterPage              from './pages/RegisterPage'
 import TechnicianPage            from './pages/TechnicianPage'
+import PatientDashboard          from './pages/PatientDashboard'
+import AdminPage                 from './pages/AdminPage'
 
-// Route chỉ cho phép khi đã đăng nhập
+// Private route wrapper with role restrictions
 function PrivateRoute({ children, allowedRoles }) {
   const { user, loading } = useAuth()
 
@@ -22,18 +25,22 @@ function PrivateRoute({ children, allowedRoles }) {
   if (!user) return <Navigate to="/login" replace />
 
   if (allowedRoles && !allowedRoles.includes(user.role)) {
-    // Sai role → redirect về trang mặc định của role đó
-    return <Navigate to={user.role === 'technician' ? '/thiet-bi' : '/'} replace />
+    // Redirect to default home of the user's role
+    if (user.role === 'engineer') return <Navigate to="/thiet-bi" replace />
+    if (user.role === 'patient') return <Navigate to="/dashboard" replace />
+    return <Navigate to="/" replace />
   }
 
   return children
 }
 
-// Layout bác sĩ (có sidebar)
+// Doctor and Admin Layout with sidebar
 function DoctorLayout() {
   const { user } = useAuth()
   if (!user) return <Navigate to="/login" replace />
-  if (user.role === 'technician') return <Navigate to="/thiet-bi" replace />
+  if (user.role === 'engineer') return <Navigate to="/thiet-bi" replace />
+  if (user.role === 'patient') return <Navigate to="/dashboard" replace />
+  
   return (
     <AppProvider>
       <div className="app-shell">
@@ -54,24 +61,45 @@ export default function App() {
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-          {/* Trang đăng nhập */}
+          {/* Login Page */}
           <Route path="/login" element={<LoginGuard />} />
+          <Route path="/register" element={<RegisterPage />} />
 
-          {/* Giao diện kỹ thuật viên */}
+          {/* Engineer Dashboard */}
           <Route
             path="/thiet-bi"
             element={
-              <PrivateRoute allowedRoles={['technician']}>
+              <PrivateRoute allowedRoles={['engineer', 'admin']}>
                 <TechnicianPage />
               </PrivateRoute>
             }
           />
 
-          {/* Giao diện bác sĩ — tất cả route còn lại */}
+          {/* Patient Dashboard */}
+          <Route
+            path="/dashboard"
+            element={
+              <PrivateRoute allowedRoles={['patient']}>
+                <PatientDashboard />
+              </PrivateRoute>
+            }
+          />
+
+          {/* Admin Dashboard */}
+          <Route
+            path="/admin"
+            element={
+              <PrivateRoute allowedRoles={['admin']}>
+                <AdminPage />
+              </PrivateRoute>
+            }
+          />
+
+          {/* Doctor Layout (Default) */}
           <Route
             path="/*"
             element={
-              <PrivateRoute allowedRoles={['staff', 'admin']}>
+              <PrivateRoute allowedRoles={['doctor']}>
                 <DoctorLayout />
               </PrivateRoute>
             }
@@ -82,10 +110,15 @@ export default function App() {
   )
 }
 
-// Nếu đã đăng nhập thì không vào /login nữa
+// LoginGuard redirects active sessions
 function LoginGuard() {
   const { user, loading } = useAuth()
   if (loading) return null
-  if (user) return <Navigate to={user.role === 'technician' ? '/thiet-bi' : '/'} replace />
+  if (user) {
+    if (user.role === 'engineer') return <Navigate to="/thiet-bi" replace />
+    if (user.role === 'patient') return <Navigate to="/dashboard" replace />
+    if (user.role === 'admin') return <Navigate to="/admin" replace />
+    return <Navigate to="/" replace />
+  }
   return <LoginPage />
 }

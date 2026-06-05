@@ -6,9 +6,8 @@ const API = 'http://localhost:8000/api'
 
 const STATUS_LABEL = {
   available:  { text: 'Sẵn sàng',   color: '#16a34a', bg: '#dcfce7' },
-  active:     { text: 'Đang dùng',  color: '#2563eb', bg: '#dbeafe' },
-  error:      { text: 'Lỗi',        color: '#dc2626', bg: '#fee2e2' },
-  unassigned: { text: 'Chờ gán',    color: '#d97706', bg: '#fef3c7' },
+  active:     { text: 'Đang hoạt động',  color: '#ef4444', bg: '#fee2e2' },
+  error:      { text: 'Lỗi',        color: '#d97706', bg: '#fef3c7' }
 }
 
 function StatusBadge({ status }) {
@@ -16,7 +15,7 @@ function StatusBadge({ status }) {
   return (
     <span style={{
       padding: '3px 10px', borderRadius: 99,
-      fontSize: 12, fontWeight: 500,
+      fontSize: 12, fontWeight: 600,
       color: s.color, background: s.bg,
     }}>{s.text}</span>
   )
@@ -27,7 +26,7 @@ export default function TechnicianPage() {
   const [devices, setDevices]     = useState([])
   const [loading, setLoading]     = useState(true)
   const [showModal, setShowModal] = useState(false)
-  const [form, setForm]           = useState({ macAddress: '', label: '' })
+  const [form, setForm]           = useState({ macAddress: '', location: 'Kho thiết bị' })
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError]   = useState('')
 
@@ -52,7 +51,7 @@ export default function TechnicianPage() {
 
   useEffect(() => {
     fetchDevices()
-    const id = setInterval(fetchDevices, 5000)
+    const id = setInterval(fetchDevices, 4000)
     return () => clearInterval(id)
   }, [fetchDevices])
 
@@ -63,7 +62,7 @@ export default function TechnicianPage() {
     try {
       await axios.post(`${API}/devices`, form)
       setShowModal(false)
-      setForm({ macAddress: '', label: '' })
+      setForm({ macAddress: '', location: 'Kho thiết bị' })
       fetchDevices()
     } catch (err) {
       setFormError(err.response?.data?.error || 'Thêm thất bại.')
@@ -73,7 +72,7 @@ export default function TechnicianPage() {
   }
 
   const handleDelete = async (device) => {
-    if (!window.confirm(`Xoá thiết bị ${device.label || device.macAddress}?`)) return
+    if (!window.confirm(`Xoá thiết bị ${device.macAddress}?`)) return
     try {
       await axios.delete(`${API}/devices/${device.id}`)
       fetchDevices()
@@ -83,36 +82,38 @@ export default function TechnicianPage() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f5f6fa', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ minHeight: '100vh', background: '#f8fafc', display: 'flex', flexDirection: 'column', fontFamily: 'system-ui, sans-serif' }}>
 
       {/* Header */}
       <header style={{
-        background: '#fff', borderBottom: '1px solid #e5e7eb',
-        padding: '0 24px', height: 56,
+        background: '#fff', borderBottom: '1px solid #e2e8f0',
+        padding: '0 24px', height: 60,
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        boxShadow: '0 1px 3px 0 rgba(0,0,0,0.02)'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{
             width: 32, height: 32, borderRadius: 8,
-            background: '#2563EB', color: '#fff',
+            background: '#EF4444', color: '#fff',
             display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16,
-          }}>⚡</div>
+          }}>❤️</div>
           <div>
-            <div style={{ fontSize: 10, color: '#9ca3af' }}>HỆ THỐNG</div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>GIÁM SÁT TRUYỀN DỊCH</div>
+            <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, letterSpacing: '0.05em' }}>SYSTEM ENGINEER</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>THEO DÕI MỀ ĐAY</div>
+            <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>{user?.name} • {user?.email}</div>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 13, fontWeight: 500, color: '#111827' }}>{user?.name}</div>
-            <div style={{ fontSize: 11, color: '#6b7280' }}>Kỹ thuật viên</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>{user?.name}</div>
+            <div style={{ fontSize: 11, color: '#64748b', fontWeight: 500 }}>Kỹ sư quản trị</div>
           </div>
           <button
             onClick={logout}
             style={{
-              padding: '6px 14px', border: '1px solid #e5e7eb',
+              padding: '6px 14px', border: '1px solid #cbd5e1',
               borderRadius: 8, fontSize: 13, background: '#fff',
-              color: '#6b7280', cursor: 'pointer',
+              color: '#475569', cursor: 'pointer', fontWeight: 600,
             }}
           >
             Đăng xuất
@@ -125,36 +126,41 @@ export default function TechnicianPage() {
 
         {/* Topbar */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-          <h2 style={{ fontSize: 18, fontWeight: 600, color: '#111827', margin: 0 }}>
-            Quản lý thiết bị ESP32
+          <h2 style={{ fontSize: 20, fontWeight: 700, color: '#0f172a', margin: 0 }}>
+            Quản lý thiết bị đeo phần cứng (ESP32)
           </h2>
+          <div style={{ textAlign: 'right', color: '#475569', fontSize: 13 }}>
+            <div>Xin chào, {user?.name}</div>
+            <div style={{ marginTop: 4 }}>Vai trò: {user?.role}</div>
+          </div>
           <button
             onClick={() => { setShowModal(true); setFormError('') }}
             style={{
               display: 'flex', alignItems: 'center', gap: 6,
-              padding: '9px 18px', background: '#2563EB',
+              padding: '9px 18px', background: '#EF4444',
               color: '#fff', border: 'none', borderRadius: 8,
-              fontSize: 14, fontWeight: 500, cursor: 'pointer',
+              fontSize: 14, fontWeight: 600, cursor: 'pointer',
             }}
           >
-            + Thêm thiết bị
+            + Đăng ký thiết bị đeo
           </button>
         </div>
 
         {/* Stats */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 20 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16, marginBottom: 20 }}>
           {[
-            { label: 'Tổng thiết bị',  value: stats.total,     color: '#111827' },
-            { label: 'Đang hoạt động', value: stats.active,    color: '#2563EB' },
+            { label: 'Tổng thiết bị đeo',  value: stats.total,     color: '#0f172a' },
+            { label: 'Đang theo dõi', value: stats.active,    color: '#ef4444' },
             { label: 'Sẵn sàng',       value: stats.available, color: '#16a34a' },
-            { label: 'Lỗi',            value: stats.error,     color: '#dc2626' },
+            { label: 'Cần bảo trì',            value: stats.error,     color: '#d97706' },
           ].map(s => (
             <div key={s.label} style={{
-              background: '#fff', borderRadius: 10,
-              border: '1px solid #e5e7eb', padding: '14px 18px',
+              background: '#fff', borderRadius: 12,
+              border: '1px solid #e2e8f0', padding: '16px 20px',
+              boxShadow: '0 1px 3px 0 rgba(0,0,0,0.02)'
             }}>
-              <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 4 }}>{s.label}</div>
-              <div style={{ fontSize: 26, fontWeight: 600, color: s.color }}>{s.value}</div>
+              <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4, fontWeight: 500 }}>{s.label}</div>
+              <div style={{ fontSize: 28, fontWeight: 800, color: s.color }}>{s.value}</div>
             </div>
           ))}
         </div>
@@ -162,60 +168,62 @@ export default function TechnicianPage() {
         {/* Table */}
         <div style={{
           background: '#fff', borderRadius: 12,
-          border: '1px solid #e5e7eb', overflow: 'hidden',
+          border: '1px solid #e2e8f0', overflow: 'hidden',
+          boxShadow: '0 1px 3px 0 rgba(0,0,0,0.02)'
         }}>
           {loading ? (
-            <div style={{ padding: 40, textAlign: 'center', color: '#6b7280' }}>Đang tải...</div>
+            <div style={{ padding: 40, textAlign: 'center', color: '#64748b' }}>Đang tải danh sách...</div>
           ) : devices.length === 0 ? (
-            <div style={{ padding: 40, textAlign: 'center', color: '#6b7280' }}>
-              Chưa có thiết bị nào. Nhấn "Thêm thiết bị" để bắt đầu.
+            <div style={{ padding: 40, textAlign: 'center', color: '#64748b' }}>
+              Chưa có thiết bị đeo nào được đăng ký trong hệ thống.
             </div>
           ) : (
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
               <thead>
-                <tr style={{ background: '#f9fafb' }}>
-                  {['MAC Address', 'Nhãn', 'Phòng', 'Giường', 'Trạng thái', 'Ngày thêm', ''].map(h => (
+                <tr style={{ background: '#f8fafc' }}>
+                  {['Địa chỉ MAC', 'Vị trí hiện tại', 'Bệnh nhân đang đeo', 'Trạng thái', 'Hành động'].map(h => (
                     <th key={h} style={{
-                      padding: '10px 14px', textAlign: 'left',
-                      fontSize: 12, color: '#6b7280', fontWeight: 500,
-                      borderBottom: '1px solid #e5e7eb',
+                      padding: '12px 16px', textAlign: 'left',
+                      fontSize: 12, color: '#64748b', fontWeight: 600,
+                      borderBottom: '1px solid #e2e8f0',
+                      textTransform: 'uppercase', letterSpacing: '0.05em'
                     }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {devices.map(d => (
-                  <tr key={d.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                    <td style={{ padding: '11px 14px', fontFamily: 'monospace', fontSize: 13 }}>
+                  <tr key={d.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <td style={{ padding: '12px 16px', fontFamily: 'monospace', fontSize: 13, fontWeight: 600, color: '#334155' }}>
                       {d.macAddress}
                     </td>
-                    <td style={{ padding: '11px 14px', color: '#374151' }}>
-                      {d.label || '—'}
+                    <td style={{ padding: '12px 16px', color: '#334155' }}>
+                      {d.location || '—'}
                     </td>
-                    <td style={{ padding: '11px 14px', color: '#6b7280' }}>
-                      {d.locationRoom || '—'}
+                    <td style={{ padding: '12px 16px', color: '#0f172a', fontWeight: 500 }}>
+                      {d.patientName ? (
+                        <span style={{ color: '#ef4444', fontWeight: 600 }}>👤 {d.patientName}</span>
+                      ) : (
+                        <span style={{ color: '#94a3b8' }}>Chưa gán</span>
+                      )}
                     </td>
-                    <td style={{ padding: '11px 14px', color: '#6b7280' }}>
-                      {d.locationBed || '—'}
-                    </td>
-                    <td style={{ padding: '11px 14px' }}>
+                    <td style={{ padding: '12px 16px' }}>
                       <StatusBadge status={d.status} />
                     </td>
-                    <td style={{ padding: '11px 14px', color: '#9ca3af', fontSize: 12 }}>
-                      {new Date(d.createdAt).toLocaleDateString('vi-VN')}
-                    </td>
-                    <td style={{ padding: '11px 14px' }}>
-                      {d.status !== 'active' && (
+                    <td style={{ padding: '12px 16px' }}>
+                      {d.status !== 'active' ? (
                         <button
                           onClick={() => handleDelete(d)}
                           style={{
-                            padding: '4px 10px', border: '1px solid #fca5a5',
-                            borderRadius: 6, fontSize: 12,
+                            padding: '6px 12px', border: '1px solid #fca5a5',
+                            borderRadius: 8, fontSize: 12, fontWeight: 600,
                             color: '#dc2626', background: '#fff', cursor: 'pointer',
                           }}
                         >
                           Xoá
                         </button>
+                      ) : (
+                        <span style={{ fontSize: 12, color: '#94a3b8', fontStyle: 'italic' }}>Đang khóa</span>
                       )}
                     </td>
                   </tr>
@@ -230,22 +238,24 @@ export default function TechnicianPage() {
       {showModal && (
         <div style={{
           position: 'fixed', inset: 0,
-          background: 'rgba(0,0,0,0.4)',
+          background: 'rgba(15, 23, 42, 0.3)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
+          backdropFilter: 'blur(4px)',
           zIndex: 1000,
         }}>
           <div style={{
             background: '#fff', borderRadius: 16,
-            padding: '32px 28px', width: 420,
-            boxShadow: '0 8px 32px rgba(0,0,0,0.15)',
+            padding: '32px 28px', width: 400,
+            border: '1px solid #e2e8f0',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
           }}>
-            <h3 style={{ fontSize: 17, fontWeight: 600, color: '#111827', marginBottom: 20, marginTop: 0 }}>
-              Thêm thiết bị ESP32
+            <h3 style={{ fontSize: 18, fontWeight: 700, color: '#0f172a', marginBottom: 20, marginTop: 0 }}>
+              Đăng ký thiết bị đeo (ESP32)
             </h3>
             <form onSubmit={handleAddDevice}>
               <div style={{ marginBottom: 16 }}>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#374151', marginBottom: 6 }}>
-                  MAC Address <span style={{ color: '#dc2626' }}>*</span>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 6 }}>
+                  Địa chỉ MAC (Hardware ID) <span style={{ color: '#dc2626' }}>*</span>
                 </label>
                 <input
                   type="text"
@@ -255,31 +265,31 @@ export default function TechnicianPage() {
                   required
                   style={{
                     width: '100%', padding: '10px 12px',
-                    border: '1px solid #d1d5db', borderRadius: 8,
+                    border: '1px solid #cbd5e1', borderRadius: 8,
                     fontSize: 14, boxSizing: 'border-box',
                     fontFamily: 'monospace',
                   }}
                 />
               </div>
-              <div style={{ marginBottom: 20 }}>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#374151', marginBottom: 6 }}>
-                  Nhãn gợi nhớ (tuỳ chọn)
+              <div style={{ marginBottom: 24 }}>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 6 }}>
+                  Vị trí cất giữ / phòng trực
                 </label>
                 <input
                   type="text"
-                  value={form.label}
-                  onChange={e => setForm(f => ({ ...f, label: e.target.value }))}
-                  placeholder="VD: ESP32 phòng ICU"
+                  value={form.location}
+                  onChange={e => setForm(f => ({ ...f, location: e.target.value }))}
+                  placeholder="VD: Kho thiết bị A, Phòng 101"
                   style={{
                     width: '100%', padding: '10px 12px',
-                    border: '1px solid #d1d5db', borderRadius: 8,
+                    border: '1px solid #cbd5e1', borderRadius: 8,
                     fontSize: 14, boxSizing: 'border-box',
                   }}
                 />
               </div>
               {formError && (
                 <div style={{
-                  padding: '8px 12px', borderRadius: 8,
+                  padding: '10px 14px', borderRadius: 8,
                   background: '#fef2f2', border: '1px solid #fecaca',
                   color: '#dc2626', fontSize: 13, marginBottom: 16,
                 }}>{formError}</div>
@@ -289,9 +299,9 @@ export default function TechnicianPage() {
                   type="button"
                   onClick={() => setShowModal(false)}
                   style={{
-                    flex: 1, padding: '10px', border: '1px solid #d1d5db',
+                    flex: 1, padding: '10px', border: '1px solid #cbd5e1',
                     borderRadius: 8, fontSize: 14, background: '#fff',
-                    color: '#374151', cursor: 'pointer',
+                    color: '#475569', cursor: 'pointer', fontWeight: 600,
                   }}
                 >
                   Huỷ
@@ -301,13 +311,13 @@ export default function TechnicianPage() {
                   disabled={submitting}
                   style={{
                     flex: 1, padding: '10px',
-                    background: submitting ? '#93c5fd' : '#2563EB',
+                    background: submitting ? '#fca5a5' : '#EF4444',
                     color: '#fff', border: 'none', borderRadius: 8,
-                    fontSize: 14, fontWeight: 500,
+                    fontSize: 14, fontWeight: 600,
                     cursor: submitting ? 'not-allowed' : 'pointer',
                   }}
                 >
-                  {submitting ? 'Đang thêm...' : 'Thêm thiết bị'}
+                  {submitting ? 'Đang đăng ký...' : 'Xác nhận'}
                 </button>
               </div>
             </form>

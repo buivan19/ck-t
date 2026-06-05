@@ -5,7 +5,10 @@ const API = 'http://localhost:8000/api'
 const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
-  const [user, setUser]     = useState(null)   // { id, name, email, role }
+const [user, setUser] = useState(() => {
+  const stored = localStorage.getItem('user')
+  return stored ? JSON.parse(stored) : null
+})
   const [token, setToken]   = useState(() => localStorage.getItem('token') || null)
   const [loading, setLoading] = useState(true)
 
@@ -22,9 +25,13 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     if (!token) { setLoading(false); return }
     axios.get(`${API}/auth/me`)
-      .then(res => setUser(res.data.user))
+      .then(res => {
+        setUser(res.data.user)
+        localStorage.setItem('user', JSON.stringify(res.data.user))
+      })
       .catch(() => {
         localStorage.removeItem('token')
+        localStorage.removeItem('user')
         setToken(null)
       })
       .finally(() => setLoading(false))
@@ -34,20 +41,27 @@ export function AuthProvider({ children }) {
     const res = await axios.post(`${API}/auth/login`, { email, password })
     const { token: newToken, user: newUser } = res.data
     localStorage.setItem('token', newToken)
+    localStorage.setItem('user', JSON.stringify(newUser))
     setToken(newToken)
     setUser(newUser)
     return newUser
   }
 
+  const register = async (email, password, name, role) => {
+    const res = await axios.post(`${API}/auth/register`, { email, password, name, role })
+    return res.data
+  }
+
   const logout = async () => {
     try { await axios.post(`${API}/auth/logout`) } catch { /* ignore */ }
     localStorage.removeItem('token')
+    localStorage.removeItem('user')
     setToken(null)
     setUser(null)
   }
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, token, loading, login, logout, register }}>
       {children}
     </AuthContext.Provider>
   )

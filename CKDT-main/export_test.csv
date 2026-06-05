@@ -1,0 +1,2 @@
+id,device_id,patient_id,temperature,humidity,recorded_at
+"69","d1-dev-uuid-1111-2222-333333333333","f660b7c9-6085-11f1-b2a1-502e91c80f71","36.90","62.32","Fri Jun 05 2026 09:31:24 GMT+0700 (Indochina Time)"

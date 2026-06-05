@@ -1,104 +1,129 @@
 // ============================================================
-// esp32_simulator.js — Giả lập NHIỀU ESP32 cùng lúc
+// esp32_simulator.js — Giả lập thiết bị đeo ESP32
 // ============================================================
-// Cách dùng:
-//   node esp32_simulator.js                → tự động lấy tất cả session đang active
-//   node esp32_simulator.js <session_id>   → chạy 1 session cụ thể
-//
-// Mỗi ESP32 ảo sẽ gửi data độc lập mỗi 3 giây.
+// Mỗi ESP32 ảo sẽ gửi dữ liệu nhiệt độ và độ ẩm da mỗi 3 giây.
 // ============================================================
 
 const API_URL  = 'http://localhost:8000/api';
+const DEVICE_KEY = process.env.DEVICE_KEY || 'DEV_KEY_123';
 const INTERVAL = 3000; // ms
 
-// ── Giả lập 1 thiết bị ──────────────────────────────────────
-function simulateDevice(sessionId, initialWeight = 500) {
-  let weight = initialWeight;
+// Giả lập 1 thiết bị gửi dữ liệu
+function simulateDevice(macAddress, patientName) {
+  console.log(`[ESP-${macAddress}] Bắt đầu gửi dữ liệu cho bệnh nhân: ${patientName}`);
 
-  console.log(`[ESP-${sessionId.slice(0,8)}] Bắt đầu giả lập, trọng lượng ban đầu: ${weight}g`);
+  let baseTemp = 36.5;
+  let baseHumid = 65.0;
 
   const timer = setInterval(async () => {
-    // Giả lập nhiễu tốc độ nhỏ giọt: 35–65 giọt/phút
-    const dropRate = Math.floor(Math.random() * 31) + 35;
+    // Biến động nhiệt độ từ 36.0°C - 39.0°C
+    baseTemp += (Math.random() * 0.4 - 0.2);
+    if (baseTemp < 36.0) baseTemp = 36.0;
+    if (baseTemp > 39.0) baseTemp = 39.0;
 
-    // Dịch vơi dần 1–2g mỗi 3 giây
-    weight -= (Math.random() * 2 + 1);
-    if (weight < 30) weight = 30; // đáy bình
+    // Biến động độ ẩm từ 50% - 95%
+    baseHumid += (Math.random() * 4 - 2);
+    if (baseHumid < 50.0) baseHumid = 50.0;
+    if (baseHumid > 95.0) baseHumid = 95.0;
 
     const payload = {
-      session_id:        sessionId,
-      current_drop_rate: dropRate,
-      current_weight:    parseFloat(weight.toFixed(2)),
+      device_mac:  macAddress,
+      device_tag: macAddress,
+      temperature: parseFloat(baseTemp.toFixed(2)),
+      humidity:    parseFloat(baseHumid.toFixed(2)),
     };
 
     try {
       const res = await fetch(`${API_URL}/du-lieu-esp`, {
         method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-device-key': DEVICE_KEY },
         body:    JSON.stringify(payload),
       });
-      const data = await res.json();
+      const data = await res.json(); 
       console.log(
-        `[ESP-${sessionId.slice(0,8)}] ${payload.current_weight}g | ` +
-        `${payload.current_drop_rate} g/p | còn ~${data.calculated_time ?? '?'} phút`
+        `[ESP-${macAddress}] Nhiệt độ: ${payload.temperature}°C | ` +
+        `Độ ẩm: ${payload.humidity}% | Chẩn đoán: ${data.diagnosis || 'Không rõ'}`
       );
-    } catch {
-      console.error(`[ESP-${sessionId.slice(0,8)}] ❌ Không kết nối được server!`);
+    } catch (err) {
+      console.error(`[ESP-${macAddress}] ❌ Không kết nối được server!`);
     }
   }, INTERVAL);
 
   return timer;
 }
 
-// ── Tự động lấy các session đang chạy ────────────────────────
+// Lấy danh sách phiên giám sát đang kích hoạt
 async function fetchActiveSessions() {
   try {
-    const res  = await fetch(`${API_URL}/sessions`);
-    const data = await res.json();
-    // Lọc session còn active (không phải completed)
-    return data.filter(s => s.status !== 'completed' && s.status !== 'urgent');
+    const res  = await fetch(`${API_URL}/sessions`, {
+      headers: {
+        // Sử dụng token giả lập hoặc bypass auth cho endpoint API public của ESP32.
+        // Endpoint /du-lieu-esp là endpoint không yêu cầu Auth.
+        // Nhưng Endpoint /sessions thì có yêu cầu. Để đơn giản cho simulator,
+        // chúng ta sẽ bypass auth hoặc tạo một tài khoản và lấy token.
+        // Ở đây, trong server.js, /api/sessions yêu cầu requireAuth.
+        // Chúng ta sẽ đăng nhập tài khoản Bác sĩ trước để lấy token!
+      }
+    });
+    // Để lấy được sessions, simulator cần login trước:
+    return [];
   } catch {
-    console.error('❌ Không lấy được session từ server.');
     return [];
   }
 }
 
-// ── Main ─────────────────────────────────────────────────────
+// Hàm chạy giả lập chính
 async function main() {
-  console.log('🚀 ESP32 Multi-Simulator khởi động...\n');
+  console.log('🚀 ESP32 Urticaria Simulator khởi động...\n');
 
-  const argSessionId = process.argv[2]; // node esp32_simulator.js <id>
-
-  if (argSessionId) {
-    // Chạy 1 session được chỉ định thủ công
-    console.log(`Chế độ: 1 session cụ thể\n`);
-    simulateDevice(argSessionId, 500);
-  } else {
-    // Tự động detect tất cả session đang active
-    console.log('Chế độ: tự động theo tất cả session đang hoạt động\n');
-
-    const sessions = await fetchActiveSessions();
-
-    if (sessions.length === 0) {
-      console.log('⚠️  Không có session nào đang chạy.');
-      console.log('   Hãy tạo phiên truyền trên web rồi chạy lại simulator này.');
-      console.log('   Hoặc chạy: node esp32_simulator.js <session_id>\n');
-      return;
-    }
-
-    console.log(`Tìm thấy ${sessions.length} session đang chạy:\n`);
-    sessions.forEach((s, i) => {
-      console.log(`  ${i+1}. ${s.patientName} — Phòng ${s.room} Giường ${s.bed} | ID: ${s.id}`);
+  let token = '';
+  try {
+    // Đăng nhập tài khoản bác sĩ để lấy danh sách thiết bị
+    const loginRes = await fetch(`${API_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'bacsi@hospital.com', password: '123456' })
     });
-    console.log('');
-
-    // Chạy tất cả cùng lúc, offset nhỏ để không gửi đúng 1 lúc
-    sessions.forEach((s, i) => {
-      setTimeout(() => {
-        simulateDevice(s.id, s.volumeInitial || 500);
-      }, i * 500); // cách nhau 0.5s để dễ đọc log
-    });
+    const loginData = await loginRes.json();
+    token = loginData.token;
+  } catch (err) {
+    console.error('❌ Không thể kết nối hoặc đăng nhập vào server backend.');
+    console.log('Vui lòng khởi động Backend Server trước.\n');
+    process.exit(1);
   }
+
+  // Fetch active sessions
+  let sessions = [];
+  try {
+    const res = await fetch(`${API_URL}/sessions`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    sessions = await res.json();
+  } catch (err) {
+    console.error('❌ Không lấy được danh sách phiên giám sát.');
+  }
+
+  if (sessions.length === 0) {
+    console.log('⚠️ Không có phiên giám sát nào đang hoạt động.');
+    console.log('Đang chờ thiết bị tự gửi dữ liệu thử nghiệm... (MAC mặc định: AA:BB:CC:DD:EE:11)');
+    
+    // Gửi thử nghiệm một thiết bị mặc định
+    simulateDevice('AA:BB:CC:DD:EE:11', 'Trần Thị C');
+    return;
+  }
+
+  console.log(`Tìm thấy ${sessions.length} phiên giám sát đang hoạt động:\n`);
+  sessions.forEach((s, i) => {
+    console.log(`  ${i+1}. Bệnh nhân: ${s.patientName} | Phòng: ${s.room} | Thiết bị: ${s.deviceId}`);
+  });
+  console.log('');
+
+  // Giả lập từng thiết bị
+  sessions.forEach((s, i) => {
+    setTimeout(() => {
+      simulateDevice(s.deviceId, s.patientName);
+    }, i * 500);
+  });
 }
 
 main();

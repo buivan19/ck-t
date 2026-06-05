@@ -2,34 +2,30 @@ import { useState } from 'react'
 import { useApp } from '../context/AppContext'
 
 export default function CreateSessionModal({ onClose }) {
-  const { createSession, devices } = useApp()
-  const [form, setForm] = useState({
-    patientName: '', age: '', room: '', bed: '',
-    condition: '', deviceId: '', fluidType: '',
-    volumeInitial: '', dropRate: '', doctor: '',
-  })
+  const { startMonitoring, devices, patients, sessions } = useApp()
+  const [patientId, setPatientId] = useState('')
+  const [deviceId, setDeviceId] = useState('')
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
 
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+  // Filter available devices
+  const availableDevices = devices.filter(d => d.status === 'available')
+
+  // Filter patients that are not currently being monitored
+  const activePatientIds = sessions.map(s => s.id) // Session id maps to patient id in sessions response
+  const unmonitoredPatients = patients.filter(p => !activePatientIds.includes(p.id))
 
   const handleSubmit = async () => {
-    if (!form.patientName || !form.room || !form.volumeInitial || !form.dropRate) {
-      setErr('Vui lòng điền đầy đủ các trường bắt buộc.')
+    if (!patientId || !deviceId) {
+      setErr('Vui lòng chọn cả bệnh nhân và thiết bị.')
       return
     }
     setSaving(true)
     try {
-      await createSession({
-        ...form,
-        age: Number(form.age),
-        volumeInitial: Number(form.volumeInitial),
-        volumeRemaining: Number(form.volumeInitial),
-        dropRate: Number(form.dropRate),
-      })
+      await startMonitoring(patientId, deviceId)
       onClose()
-    } catch {
-      setErr('Lỗi khi lưu phiên. Kiểm tra Backend đang chạy.')
+    } catch (e) {
+      setErr(e.response?.data?.error || 'Lỗi khi gán thiết bị.')
     } finally {
       setSaving(false)
     }
@@ -40,60 +36,47 @@ export default function CreateSessionModal({ onClose }) {
 
   return (
     <div className="modal-overlay" onClick={handleOverlay}>
-      <div className="modal-box">
+      <div className="modal-box" style={{ maxWidth: 450 }}>
         <div className="modal-head">
-          <h2>Tạo phiên truyền mới</h2>
+          <h2 style={{ fontSize: 18, fontWeight: 700 }}>Gán thiết bị giám sát</h2>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
 
-        <div className="form-grid">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 16 }}>
           <div className="form-group">
-            <label>Họ và tên <span style={{color:'red'}}>*</span></label>
-            <input placeholder="" value={form.patientName} onChange={e => set('patientName', e.target.value)} />
-          </div>
-          <div className="form-group">
-            <label>Tuổi</label>
-            <input type="number" placeholder="" value={form.age} onChange={e => set('age', e.target.value)} />
-          </div>
-          <div className="form-group">
-            <label>Phòng <span style={{color:'red'}}>*</span></label>
-            <input placeholder="" value={form.room} onChange={e => set('room', e.target.value)} />
-          </div>
-          <div className="form-group">
-            <label>Giường</label>
-            <input placeholder="" value={form.bed} onChange={e => set('bed', e.target.value)} />
-          </div>
-          <div className="form-group span2">
-            <label>Bệnh lý / Tình trạng</label>
-            <input placeholder="" value={form.condition} onChange={e => set('condition', e.target.value)} />
-          </div>
-          <div className="form-group">
-            <label>Thiết bị ESP32</label>
-            <select value={form.deviceId} onChange={e => set('deviceId', e.target.value)}>
-              <option value="">Chọn thiết bị</option>
-              {devices.length > 0
-                ? devices.map(d => <option key={d.id} value={d.id}>{d.name ?? d.id}</option>)
-                : ['ESP32-001','ESP32-002','ESP32-003','ESP32-004','ESP32-005'].map(d =>
-                    <option key={d} value={d}>{d}</option>
-                  )
-              }
+            <label style={{ display: 'block', marginBottom: 6, fontWeight: 600, fontSize: 13 }}>
+              Chọn bệnh nhân <span style={{color:'red'}}>*</span>
+            </label>
+            <select 
+              value={patientId} 
+              onChange={e => setPatientId(e.target.value)}
+              style={{ width: '100%', padding: '10px', border: '1px solid #cbd5e1', borderRadius: 8, fontSize: 14 }}
+            >
+              <option value="">-- Chọn bệnh nhân --</option>
+              {unmonitoredPatients.map(p => (
+                <option key={p.id} value={p.id}>
+                  {p.fullName} (Phòng {p.roomNumber || '—'} - Giường {p.bedNumber || '—'})
+                </option>
+              ))}
             </select>
           </div>
+
           <div className="form-group">
-            <label>Loại dịch</label>
-            <input placeholder="VD: NaCl 0.9%, Glucose 5%" value={form.fluidType} onChange={e => set('fluidType', e.target.value)} />
-          </div>
-          <div className="form-group">
-            <label>Thể tích ban đầu (ml) <span style={{color:'red'}}>*</span></label>
-            <input type="number" placeholder="" value={form.volumeInitial} onChange={e => set('volumeInitial', e.target.value)} />
-          </div>
-          <div className="form-group">
-            <label>Tốc độ truyền (giọt/phút) <span style={{color:'red'}}>*</span></label>
-            <input type="number" placeholder="" value={form.dropRate} onChange={e => set('dropRate', e.target.value)} />
-          </div>
-          <div className="form-group span2">
-            <label>Bác sĩ thực hiện</label>
-            <input placeholder="" value={form.doctor} onChange={e => set('doctor', e.target.value)} />
+            <label style={{ display: 'block', marginBottom: 6, fontWeight: 600, fontSize: 13 }}>
+              Chọn thiết bị đeo (MAC) <span style={{color:'red'}}>*</span>
+            </label>
+            <select 
+              value={deviceId} 
+              onChange={e => setDeviceId(e.target.value)}
+              style={{ width: '100%', padding: '10px', border: '1px solid #cbd5e1', borderRadius: 8, fontSize: 14 }}
+            >
+              <option value="">-- Chọn thiết bị --</option>
+              {availableDevices.map(d => (
+                <option key={d.id} value={d.id}>
+                  {d.macAddress} ({d.location || 'Kho'})
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
@@ -101,9 +84,14 @@ export default function CreateSessionModal({ onClose }) {
           <p style={{ color: '#DC2626', fontSize: 13, marginTop: 12 }}>⚠ {err}</p>
         )}
 
-        <div className="form-submit">
-          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>
-            {saving ? 'Đang lưu...' : 'Lưu & Bắt đầu'}
+        <div className="form-submit" style={{ marginTop: 24 }}>
+          <button 
+            className="btn btn-primary" 
+            onClick={handleSubmit} 
+            disabled={saving}
+            style={{ width: '100%', background: '#EF4444' }}
+          >
+            {saving ? 'Đang lưu...' : 'Bắt đầu theo dõi'}
           </button>
         </div>
       </div>

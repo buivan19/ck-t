@@ -1,50 +1,133 @@
 // ============================================================
-// server.js - HỆ THỐNG GIÁM SÁT TRUYỀN DỊCH
+// server.js - Urticaria Monitoring System Web Server
 // ============================================================
 'use strict';
 
 const express = require('express');
 const cors    = require('cors');
-const crypto  = require('crypto'); // built-in Node, không cần cài
+const crypto  = require('crypto');
 require('dotenv').config();
 
 const app = express();
+const http = require('http');
+const { Server } = require('socket.io');
 
 // ── Middleware ───────────────────────────────────────────────
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:5173',
   methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
   credentials: true,
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-device-key'],
+  exposedHeaders: ['Content-Disposition']
 }));
 app.use(express.json());
 
-// ── Pool MySQL2 ──────────────────────────────────────────────
-const mysql = require('mysql2/promise');
+// ── Import DB Pool ───────────────────────────────────────────
+const pool = require('./config/pool');
 
-const pool = mysql.createPool({
-  host:               process.env.DB_HOST     || 'localhost',
-  port:    Number(    process.env.DB_PORT)     || 3306,
-  user:               process.env.DB_USER     || 'root',
-  password:           process.env.DB_PASSWORD || '',
-  database:           process.env.DB_NAME     || 'infusion_monitoring',
-  waitForConnections: true,
-  connectionLimit:    10,
-  timezone:           '+07:00',
+async function ensureDeviceTagColumn() {
+  try {
+    const [rows] = await pool.query("SHOW COLUMNS FROM devices LIKE 'device_tag'");
+    if (!rows || rows.length === 0) {
+      console.log('[DB] Thêm cột device_tag vào bảng devices...');
+      await pool.query("ALTER TABLE devices ADD COLUMN device_tag varchar(100) DEFAULT NULL");
+      try {
+        await pool.query('CREATE UNIQUE INDEX idx_devices_device_tag ON devices (device_tag)');
+      } catch (err) {
+        if (err.code === 'ER_DUP_KEYNAME' || err.errno === 1061) {
+          console.log('[DB] Chỉ mục device_tag đã tồn tại, bỏ qua.');
+        } else {
+          throw err;
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[DB] Lỗi khi đảm bảo cột device_tag:', err.message);
+    throw err;
+  }
+}
+
+// Create HTTP server and Socket.IO for realtime updates
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+    methods: ['GET','POST']
+  }
 });
 
-pool.getConnection()
-  .then(c => { console.log('[DB] Ket noi MySQL thanh cong!'); c.release(); })
-  .catch(e => { console.error('[DB] Loi ket noi MySQL:', e.message); process.exit(1); });
+// Socket.IO authentication middleware: verify token from in-memory tokenStore
+io.use((socket, next) => {
+  try {
+    const tokenFromAuth = socket.handshake.auth && socket.handshake.auth.token;
+    const authHeader = socket.handshake.headers && socket.handshake.headers.authorization;
+    const token = (tokenFromAuth ? tokenFromAuth : (authHeader ? authHeader.replace('Bearer ', '') : '')).trim();
 
-// ── Token store đơn giản (in-memory) ────────────────────────
-// Key: token string  →  Value: { userId, role, name, email }
+    if (!token || !tokenStore.has(token)) {
+      return next(new Error('unauthorized'));
+    }
+
+    const user = tokenStore.get(token);
+    socket.data.user = user;
+
+    // Join a personal room so we can emit only to that user
+    if (user && user.userId) {
+      socket.join(`user:${user.userId}`);
+    }
+
+    // Join monitor room for clinicians/engineers/admins
+    if (user && ['doctor', 'engineer', 'admin'].includes(user.role)) {
+      socket.join('monitor');
+    }
+
+    next();
+  } catch (e) { next(new Error('unauthorized')) }
+});
+
+// Inject realtime into controllers that need it
+const DeviceController = require('./controllers/DeviceController');
+const pendingDeviceClaims = new Map();
+if (DeviceController && typeof DeviceController.setRealtime === 'function') {
+  DeviceController.setRealtime(io);
+}
+if (DeviceController && typeof DeviceController.setPendingDeviceClaims === 'function') {
+  DeviceController.setPendingDeviceClaims(pendingDeviceClaims);
+}
+
+io.on('connection', (socket) => {
+  socket.on('patient:watch-device', (deviceTag) => {
+    const tag = String(deviceTag || '').trim();
+    if (!tag || !socket.data?.user?.userId) return;
+    pendingDeviceClaims.set(tag, { userId: socket.data.user.userId, socketId: socket.id });
+    console.log('[Socket] Patient is waiting for device tag:', tag, 'userId=', socket.data.user.userId);
+  });
+
+  socket.on('patient:unwatch-device', (deviceTag) => {
+    const tag = String(deviceTag || '').trim();
+    if (!tag) return;
+    const entry = pendingDeviceClaims.get(tag);
+    if (entry && entry.socketId === socket.id) {
+      pendingDeviceClaims.delete(tag);
+    }
+  });
+
+  socket.on('disconnect', () => {
+    for (const [tag, entry] of pendingDeviceClaims.entries()) {
+      if (entry.socketId === socket.id) {
+        pendingDeviceClaims.delete(tag);
+      }
+    }
+  });
+});
+
+// ── Simple In-Memory Token Store ─────────────────────────────
 const tokenStore = new Map();
 
 function generateToken() {
   return crypto.randomBytes(32).toString('hex');
 }
 
-// Middleware xác thực
+// Authentication Middlewares
 function requireAuth(req, res, next) {
   const auth = req.headers['authorization'] || '';
   const token = auth.replace('Bearer ', '').trim();
@@ -55,26 +138,31 @@ function requireAuth(req, res, next) {
   next();
 }
 
-// Middleware chỉ cho kỹ thuật viên
-function requireTechnician(req, res, next) {
-  if (req.user?.role !== 'technician') {
-    return res.status(403).json({ error: 'Chỉ kỹ thuật viên mới có quyền này.' });
-  }
-  next();
+function requireRole(roles) {
+  return (req, res, next) => {
+    if (!roles.includes(req.user?.role)) {
+      return res.status(403).json({ error: 'Bạn không có quyền thực hiện hành động này.' });
+    }
+    next();
+  };
 }
 
-// ── Routes ESP32 ─────────────────────────────────────────────
+// ── Route ESP32 (Sensor Data Ingestion) ──────────────────────
 const deviceRoutes = require('./routes/deviceRoutes');
 app.use('/', deviceRoutes);
+app.use('/api', deviceRoutes);
 
-// ── Health check ─────────────────────────────────────────────
+// CSV export routes
+const exportRoutes = require('./routes/exportRoutes');
+app.use('/api', exportRoutes);
+
+// Health check
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 
 // ============================================================
-// AUTH
+// AUTHENTICATION ENDPOINTS
 // ============================================================
 
-// POST /api/auth/login
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -82,7 +170,6 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(400).json({ error: 'Thiếu email hoặc mật khẩu.' });
     }
 
-    // Mật khẩu lưu plain text trong DB (đơn giản cho dự án nhỏ)
     const [[user]] = await pool.query(
       `SELECT id, name, email, role FROM users
        WHERE email = ? AND password_hash = ? LIMIT 1`,
@@ -106,157 +193,249 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// POST /api/auth/logout
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    const { email, password, name, role } = req.body;
+    const allowedRoles = ['patient', 'doctor', 'admin'];
+
+    if (!email || !password || !name || !role) {
+      return res.status(400).json({ error: 'Thiếu email, mật khẩu, tên người dùng hoặc loại tài khoản.' });
+    }
+    if (!allowedRoles.includes(role)) {
+      return res.status(400).json({ error: 'Loại tài khoản không hợp lệ.' });
+    }
+
+    const [[existing]] = await pool.query('SELECT id FROM users WHERE email = ? LIMIT 1', [email]);
+    if (existing) {
+      return res.status(409).json({ error: 'Tài khoản với tên đăng nhập này đã tồn tại.' });
+    }
+
+    const userId = crypto.randomUUID();
+    await pool.query(
+      'INSERT INTO users (id, name, email, password_hash, role) VALUES (?, ?, ?, ?, ?)',
+      [userId, name, email, password, role]
+    );
+
+    if (role === 'patient') {
+      await pool.query(
+        'INSERT INTO patient_profiles (id, user_id, full_name, created_at) VALUES (UUID(), ?, ?, NOW())',
+        [userId, name]
+      );
+    }
+
+    res.status(201).json({
+      success: true,
+      user: { id: userId, name, email, role }
+    });
+  } catch (err) {
+    console.error('[POST /api/auth/register]', err.message || err);
+    res.status(500).json({ error: err.message || 'Lỗi server.' });
+  }
+});
+
 app.post('/api/auth/logout', requireAuth, (req, res) => {
   const token = req.headers['authorization'].replace('Bearer ', '').trim();
   tokenStore.delete(token);
   res.json({ success: true });
 });
 
-// GET /api/auth/me  — kiểm tra token còn hợp lệ không
 app.get('/api/auth/me', requireAuth, (req, res) => {
   res.json({ user: req.user });
 });
 
 // ============================================================
-// DEVICES — dành cho kỹ thuật viên
+// DEVICE ENDPOINTS (For Engineers)
 // ============================================================
 
-// GET /api/devices — lấy danh sách thiết bị (cả bác sĩ lẫn KTV đều dùng)
 app.get('/api/devices', requireAuth, async (req, res) => {
   try {
-    const [rows] = await pool.query(
-      `SELECT id, mac_address, label, location_room, location_bed, status, created_at
-       FROM infusion_devices
-       ORDER BY created_at DESC`
-    );
-    res.json(rows.map(d => ({
-      id:           d.id,
-      macAddress:   d.mac_address,
-      label:        d.label || d.mac_address,
-      locationRoom: d.location_room,
-      locationBed:  d.location_bed,
-      status:       d.status,      // 'available' | 'active' | 'error' | 'unassigned'
-      createdAt:    d.created_at,
-    })));
+    const [rows] = await pool.query(`
+      SELECT d.id, d.mac_address AS macAddress, d.status, d.location, d.created_at AS createdAt, p.full_name AS patientName
+      FROM devices d
+      LEFT JOIN patient_profiles p ON d.patient_id = p.id
+      ORDER BY d.created_at DESC
+    `);
+    res.json(rows);
   } catch (err) {
     console.error('[GET /api/devices]', err.message);
-    res.json([]);
+    res.status(500).json({ error: err.message });
   }
 });
 
-// POST /api/devices — KTV thêm thiết bị mới
-app.post('/api/devices', requireAuth, requireTechnician, async (req, res) => {
+app.post('/api/devices', requireAuth, requireRole(['engineer', 'admin']), async (req, res) => {
   try {
-    const { macAddress, label } = req.body;
+    const { macAddress, location } = req.body;
     if (!macAddress) {
-      return res.status(400).json({ error: 'Thiếu macAddress.' });
+      return res.status(400).json({ error: 'Thiếu MAC address.' });
     }
 
-    // Kiểm tra trùng
-    const [[existing]] = await pool.query(
-      `SELECT id FROM infusion_devices WHERE mac_address = ? LIMIT 1`,
-      [macAddress]
-    );
+    // Check duplicate MAC
+    const [[existing]] = await pool.query('SELECT id FROM devices WHERE mac_address = ? LIMIT 1', [macAddress]);
     if (existing) {
-      return res.status(409).json({ error: 'MAC address đã tồn tại trong hệ thống.' });
+      return res.status(409).json({ error: 'MAC address đã tồn tại.' });
     }
 
     await pool.query(
-      `INSERT INTO infusion_devices (mac_address, label, status, registered_by)
-       VALUES (?, ?, 'available', ?)`,
-      [macAddress, label || null, req.user.userId]
+      `INSERT INTO devices (id, mac_address, status, location) VALUES (UUID(), ?, 'available', ?)`,
+      [macAddress, location || 'Kho thiết bị']
     );
 
-    const [[newDevice]] = await pool.query(
-      `SELECT id, mac_address, label, location_room, location_bed, status, created_at
-       FROM infusion_devices WHERE mac_address = ? LIMIT 1`,
-      [macAddress]
-    );
-
-    res.status(201).json({
-      id:           newDevice.id,
-      macAddress:   newDevice.mac_address,
-      label:        newDevice.label || newDevice.mac_address,
-      locationRoom: newDevice.location_room,
-      locationBed:  newDevice.location_bed,
-      status:       newDevice.status,
-      createdAt:    newDevice.created_at,
-    });
+    res.status(201).json({ success: true });
   } catch (err) {
     console.error('[POST /api/devices]', err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// DELETE /api/devices/:id — KTV xoá thiết bị (chỉ khi không đang active)
-app.delete('/api/devices/:id', requireAuth, requireTechnician, async (req, res) => {
+app.delete('/api/devices/:id', requireAuth, requireRole(['engineer', 'admin']), async (req, res) => {
   try {
-    const [[device]] = await pool.query(
-      `SELECT id, status FROM infusion_devices WHERE id = ? LIMIT 1`,
-      [req.params.id]
-    );
-    if (!device) return res.status(404).json({ error: 'Không tìm thấy thiết bị.' });
-    if (device.status === 'active') {
-      return res.status(409).json({ error: 'Không thể xoá thiết bị đang có phiên truyền.' });
+    const [[device]] = await pool.query('SELECT status FROM devices WHERE id = ? LIMIT 1', [req.params.id]);
+    if (!device) {
+      return res.status(404).json({ error: 'Không tìm thấy thiết bị.' });
     }
-    await pool.query(`DELETE FROM infusion_devices WHERE id = ?`, [req.params.id]);
+    if (device.status === 'active') {
+      return res.status(409).json({ error: 'Không thể xoá thiết bị đang gắn bệnh nhân.' });
+    }
+
+    await pool.query('DELETE FROM devices WHERE id = ?', [req.params.id]);
     res.json({ success: true });
   } catch (err) {
-    console.error('[DELETE /api/devices]', err.message);
+    console.error('[DELETE /api/devices/:id]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/devices/:id/report', requireAuth, requireRole(['doctor', 'engineer', 'admin']), async (req, res) => {
+  try {
+    const { reason } = req.body;
+    if (!reason) {
+      return res.status(400).json({ error: 'Thiếu lý do báo cáo lỗi thiết bị.' });
+    }
+
+    const [[device]] = await pool.query('SELECT id, patient_id FROM devices WHERE id = ? LIMIT 1', [req.params.id]);
+    if (!device) {
+      return res.status(404).json({ error: 'Không tìm thấy thiết bị.' });
+    }
+    if (!device.patient_id) {
+      return res.status(400).json({ error: 'Thiết bị chưa được gắn với bệnh nhân, không thể báo cáo lỗi.' });
+    }
+
+    await pool.query('UPDATE devices SET status = "error" WHERE id = ?', [device.id]);
+    await pool.query(
+      `INSERT INTO clinical_diagnoses (id, patient_id, device_id, temperature, humidity, diagnosis_text, status, created_at)
+       VALUES (UUID(), ?, ?, 0, 0, ?, 'urgent', NOW())`,
+      [device.patient_id, device.id, `Báo cáo lỗi thiết bị: ${reason}`]
+    );
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[POST /api/devices/:id/report]', err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
 // ============================================================
-// SESSIONS
+// PATIENT PROFILE ENDPOINTS (For Doctors)
 // ============================================================
 
-// GET /api/sessions
-app.get('/api/sessions', requireAuth, async (req, res) => {
+app.get('/api/patients', requireAuth, requireRole(['doctor', 'admin']), async (req, res) => {
   try {
     const [rows] = await pool.query(`
-      SELECT
-        s.id,
-        p.full_name                          AS patientName,
-        p.room_number                        AS room,
-        p.bed_number                         AS bed,
-        d.mac_address                        AS deviceId,
-        ft.name                              AS fluidType,
-        s.initial_weight                     AS volumeInitial,
-        s.status,
-        s.start_at                           AS createdAt,
-        (SELECT m.current_drop_rate
-         FROM infusion_metrics_logs m
-         WHERE m.session_id = s.id
-         ORDER BY m.recorded_at DESC LIMIT 1) AS dropRate,
-        (SELECT m.current_weight
-         FROM infusion_metrics_logs m
-         WHERE m.session_id = s.id
-         ORDER BY m.recorded_at DESC LIMIT 1) AS volumeRemaining,
-        (SELECT m.remaining_time
-         FROM infusion_metrics_logs m
-         WHERE m.session_id = s.id
-         ORDER BY m.recorded_at DESC LIMIT 1) AS remainingTime,
-        EXISTS(
-          SELECT 1 FROM infusion_issues i
-          WHERE i.session_id = s.id AND i.status != 'resolved'
-        ) AS manualError
-      FROM infusion_sessions s
-      JOIN patient_profiles p  ON s.patient_id    = p.id
-      JOIN infusion_devices d  ON s.device_id     = d.id
-      LEFT JOIN fluid_types ft ON s.fluid_type_id = ft.id
-      WHERE s.status != 'completed'
-      ORDER BY s.start_at DESC
+      SELECT p.id, p.full_name AS fullName, p.age, p.gender, p.phone, p.room_number AS roomNumber, p.bed_number AS bedNumber, p.created_at AS createdAt,
+             d.mac_address AS deviceMac
+      FROM patient_profiles p
+      LEFT JOIN devices d ON d.patient_id = p.id
+      ORDER BY p.created_at DESC
+    `);
+    res.json(rows);
+  } catch (err) {
+    console.error('[GET /api/patients]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/patients', requireAuth, requireRole(['doctor', 'admin']), async (req, res) => {
+  try {
+    const { fullName, age, gender, phone, roomNumber, bedNumber, email, password } = req.body;
+    if (!fullName) {
+      return res.status(400).json({ error: 'Thiếu tên bệnh nhân.' });
+    }
+
+    let userId = null;
+    if (email && password) {
+      const [[existingUser]] = await pool.query('SELECT id FROM users WHERE email = ? LIMIT 1', [email]);
+      if (existingUser) {
+        userId = existingUser.id;
+      } else {
+        userId = crypto.randomUUID();
+        await pool.query(
+          `INSERT INTO users (id, name, email, password_hash, role) VALUES (?, ?, ?, ?, 'patient')`,
+          [userId, fullName, email, password]
+        );
+      }
+    }
+
+    await pool.query(
+      `INSERT INTO patient_profiles (id, user_id, full_name, age, gender, phone, room_number, bed_number)
+       VALUES (UUID(), ?, ?, ?, ?, ?, ?, ?)`,
+      [userId, fullName, age || null, gender || null, phone || null, roomNumber || null, bedNumber || null]
+    );
+
+    res.status(201).json({ success: true });
+  } catch (err) {
+    console.error('[POST /api/patients]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/patients/:id', requireAuth, requireRole(['doctor', 'admin']), async (req, res) => {
+  try {
+    // Free up devices
+    await pool.query('UPDATE devices SET status = "available", patient_id = NULL WHERE patient_id = ?', [req.params.id]);
+    await pool.query('DELETE FROM patient_profiles WHERE id = ?', [req.params.id]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[DELETE /api/patients/:id]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================================
+// ACTIVE SESSIONS / MONITORING ENDPOINTS (For Doctors)
+// ============================================================
+
+app.get('/api/sessions', requireAuth, requireRole(['doctor', 'admin']), async (req, res) => {
+  try {
+    const [rows] = await pool.query(`
+      SELECT 
+        p.id AS id,
+        p.full_name AS patientName,
+        p.room_number AS room,
+        p.bed_number AS bed,
+        d.mac_address AS deviceId,
+        (SELECT s.temperature FROM sensor_logs s WHERE s.patient_id = p.id ORDER BY s.recorded_at DESC LIMIT 1) AS lastTemp,
+        (SELECT s.humidity FROM sensor_logs s WHERE s.patient_id = p.id ORDER BY s.recorded_at DESC LIMIT 1) AS lastHumid,
+        (SELECT c.diagnosis_text FROM clinical_diagnoses c WHERE c.patient_id = p.id ORDER BY c.created_at DESC LIMIT 1) AS diagnosisText,
+        (SELECT c.status FROM clinical_diagnoses c WHERE c.patient_id = p.id ORDER BY c.created_at DESC LIMIT 1) AS status,
+        d.created_at AS createdAt
+      FROM patient_profiles p
+      JOIN devices d ON d.patient_id = p.id
+      WHERE d.status = 'active'
+      ORDER BY d.created_at DESC
     `);
 
     res.json(rows.map(r => ({
-      ...r,
-      volumeRemaining: r.volumeRemaining ?? r.volumeInitial,
-      dropRate:        r.dropRate        ?? 0,
-      remainingTime:   r.remainingTime   ?? null,
-      manualError:     Boolean(r.manualError),
-      ended:           false,
+      id:              r.id,
+      patientName:     r.patientName,
+      room:            r.room,
+      bed:             r.bed,
+      deviceId:        r.deviceId,
+      temperature:     r.lastTemp ?? null,
+      humidity:        r.lastHumid ?? null,
+      diagnosisText:   r.diagnosisText ?? 'Chưa có dữ liệu',
+      status:          r.status ?? 'normal',
+      createdAt:       r.createdAt,
+      ended:           false
     })));
   } catch (err) {
     console.error('[GET /api/sessions]', err.message);
@@ -264,196 +443,201 @@ app.get('/api/sessions', requireAuth, async (req, res) => {
   }
 });
 
-// GET /api/sessions/:id/metrics
+app.post('/api/sessions', requireAuth, requireRole(['doctor', 'admin']), async (req, res) => {
+  try {
+    const { patientId, deviceId } = req.body;
+    if (!patientId || !deviceId) {
+      return res.status(400).json({ error: 'Thiếu patientId hoặc deviceId.' });
+    }
+
+    const [[device]] = await pool.query('SELECT id, status FROM devices WHERE id = ? OR mac_address = ? LIMIT 1', [deviceId, deviceId]);
+    if (!device) {
+      return res.status(404).json({ error: 'Không tìm thấy thiết bị.' });
+    }
+    if (device.status !== 'available') {
+      return res.status(409).json({ error: 'Thiết bị đang bận hoặc bị lỗi.' });
+    }
+
+    await pool.query('UPDATE devices SET status = "active", patient_id = ? WHERE id = ?', [patientId, device.id]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[POST /api/sessions]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.patch('/api/sessions/:id/end', requireAuth, requireRole(['doctor', 'admin']), async (req, res) => {
+  try {
+    await pool.query('UPDATE devices SET status = "available", patient_id = NULL WHERE patient_id = ?', [req.params.id]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[PATCH /api/sessions/:id/end]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/sessions/:id/metrics', requireAuth, async (req, res) => {
   try {
-    const [rows] = await pool.query(
-      `SELECT current_drop_rate, current_weight, remaining_time, recorded_at
-       FROM infusion_metrics_logs
-       WHERE session_id = ?
-       ORDER BY recorded_at DESC LIMIT 60`,
-      [req.params.id]
-    );
-    res.json(rows.reverse());
+    const [rows] = await pool.query(`
+      SELECT temperature, humidity, recorded_at AS recordedAt
+      FROM sensor_logs
+      WHERE patient_id = ?
+      ORDER BY recorded_at DESC LIMIT 60
+    `, [req.params.id]);
+
+    res.json(rows.map(r => ({
+      temperature: Number(r.temperature),
+      humidity:    Number(r.humidity),
+      recordedAt:  r.recordedAt
+    })).reverse());
   } catch (err) {
-    console.error('[GET /metrics]', err.message);
+    console.error('[GET /api/sessions/:id/metrics]', err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// POST /api/sessions
-app.post('/api/sessions', requireAuth, async (req, res) => {
-  const conn = await pool.getConnection();
+// ============================================================
+// CLINICAL DIAGNOSES / HISTORICAL ALERTS (For Doctors)
+// ============================================================
+
+app.get('/api/diagnoses', requireAuth, requireRole(['doctor', 'engineer', 'admin']), async (req, res) => {
   try {
-    await conn.beginTransaction();
-
-    const { patientName, room, bed, deviceId, fluidType, volumeInitial, dropRate } = req.body;
-
-    if (!patientName || !deviceId || !volumeInitial) {
-      await conn.rollback();
-      return res.status(400).json({ error: 'Thiếu: patientName, deviceId, volumeInitial' });
-    }
-
-    // 1. Tìm hoặc tạo bệnh nhân
-    let patientId;
-    const [existing] = await conn.query(
-      `SELECT id FROM patient_profiles
-       WHERE full_name=? AND room_number=? AND bed_number=? LIMIT 1`,
-      [patientName, room ?? null, bed ?? null]
-    );
-    if (existing.length > 0) {
-      patientId = existing[0].id;
-    } else {
-      await conn.query(
-        `INSERT INTO patient_profiles (full_name, room_number, bed_number) VALUES (?,?,?)`,
-        [patientName, room ?? null, bed ?? null]
-      );
-      const [[np]] = await conn.query(
-        `SELECT id FROM patient_profiles WHERE full_name=? ORDER BY created_at DESC LIMIT 1`,
-        [patientName]
-      );
-      patientId = np.id;
-    }
-
-    // 2. Tìm thiết bị theo mac_address
-    const [[device]] = await conn.query(
-      `SELECT id, status FROM infusion_devices WHERE mac_address=? LIMIT 1`,
-      [deviceId]
-    );
-    if (!device) {
-      await conn.rollback();
-      return res.status(404).json({ error: `Không tìm thấy thiết bị: ${deviceId}` });
-    }
-    if (device.status === 'active') {
-      await conn.rollback();
-      return res.status(409).json({ error: 'Thiết bị đang có phiên truyền khác.' });
-    }
-
-    // 3. Tìm loại dịch
-    let fluidTypeId = null;
-    if (fluidType) {
-      const [fts] = await conn.query(
-        `SELECT id FROM fluid_types WHERE name LIKE ? LIMIT 1`,
-        [`%${fluidType}%`]
-      );
-      if (fts.length > 0) fluidTypeId = fts[0].id;
-    }
-
-    // 4. Dùng staff_id từ token đăng nhập
-    const staffId = req.user.userId;
-
-    // 5. Tạo phiên
-    await conn.query(
-      `INSERT INTO infusion_sessions
-         (device_id, patient_id, staff_id, fluid_type_id, initial_weight, status)
-       VALUES (?,?,?,?,?,'normal')`,
-      [device.id, patientId, staffId, fluidTypeId, volumeInitial]
-    );
-
-    // 6. Lấy phiên vừa tạo
-    const [[newSession]] = await conn.query(
-      `SELECT s.id, p.full_name AS patientName, p.room_number AS room,
-              p.bed_number AS bed, d.mac_address AS deviceId,
-              ft.name AS fluidType, s.initial_weight AS volumeInitial,
-              s.status, s.start_at AS createdAt
-       FROM infusion_sessions s
-       JOIN patient_profiles p  ON s.patient_id    = p.id
-       JOIN infusion_devices d  ON s.device_id     = d.id
-       LEFT JOIN fluid_types ft ON s.fluid_type_id = ft.id
-       WHERE s.patient_id=? ORDER BY s.start_at DESC LIMIT 1`,
-      [patientId]
-    );
-
-    // 7. Đánh dấu thiết bị bận
-    await conn.query(
-      `UPDATE infusion_devices SET status='active' WHERE id=?`,
-      [device.id]
-    );
-
-    await conn.commit();
-    res.status(201).json({
-      ...newSession,
-      volumeRemaining: Number(volumeInitial),
-      dropRate:        Number(dropRate) || 0,
-      manualError:     false,
-      ended:           false,
-    });
-
-  } catch (err) {
-    await conn.rollback();
-    console.error('[POST /api/sessions] LOI:', err.message);
-    res.status(500).json({ error: err.message });
-  } finally {
-    conn.release();
-  }
-});
-
-// PATCH /api/sessions/:id/end
-app.patch('/api/sessions/:id/end', requireAuth, async (req, res) => {
-  try {
-    const [[s]] = await pool.query(
-      'SELECT device_id FROM infusion_sessions WHERE id=?',
-      [req.params.id]
-    );
-    if (!s) return res.status(404).json({ error: 'Không tìm thấy phiên' });
-
-    await pool.query(
-      `UPDATE infusion_sessions SET status='completed', end_at=NOW() WHERE id=?`,
-      [req.params.id]
-    );
-    await pool.query(
-      `UPDATE infusion_devices SET status='available' WHERE id=?`,
-      [s.device_id]
-    );
-    res.json({ success: true });
-  } catch (err) {
-    console.error('[PATCH /end]', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// PATCH /api/sessions/:id/error
-app.patch('/api/sessions/:id/error', requireAuth, async (req, res) => {
-  try {
-    const staffId = req.user.userId;
-
-    await pool.query(
-      `INSERT INTO infusion_issues
-         (session_id, reported_by, issue_type, description, status)
-       VALUES (?, ?, 'device_error', 'Loi thiet bi - bao cao thu cong', 'pending')`,
-      [req.params.id, staffId]
-    );
-    await pool.query(
-      `UPDATE infusion_sessions SET status='urgent' WHERE id=?`,
-      [req.params.id]
-    );
-    res.json({ success: true });
-  } catch (err) {
-    console.error('[PATCH /error]', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// GET /api/alerts
-app.get('/api/alerts', requireAuth, async (req, res) => {
-  try {
-    const [rows] = await pool.query(
-      `SELECT a.id, a.alert_type, a.message, a.is_read, a.triggered_at,
-              p.full_name AS patientName, p.room_number AS room, p.bed_number AS bed
-       FROM infusion_alerts a
-       JOIN infusion_sessions s ON a.session_id = s.id
-       JOIN patient_profiles  p ON s.patient_id = p.id
-       ORDER BY a.triggered_at DESC LIMIT 50`
-    );
+    const [rows] = await pool.query(`
+      SELECT 
+        c.id, c.temperature, c.humidity, c.diagnosis_text AS message, c.status AS alert_type, c.created_at AS triggered_at,
+        p.full_name AS patientName, p.room_number AS room, p.bed_number AS bed
+      FROM clinical_diagnoses c
+      JOIN patient_profiles p ON c.patient_id = p.id
+      ORDER BY c.created_at DESC LIMIT 100
+    `);
     res.json(rows);
   } catch (err) {
-    console.error('[GET /api/alerts]', err.message);
-    res.json([]);
+    console.error('[GET /api/diagnoses]', err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 
-// ── Khởi động ─────────────────────────────────────────────────
+// ============================================================
+// PATIENT PRIVATE DASHBOARD ENDPOINTS
+// ============================================================
+
+app.get('/api/patient/dashboard', requireAuth, requireRole(['patient']), async (req, res) => {
+  try {
+    const [[profile]] = await pool.query('SELECT * FROM patient_profiles WHERE user_id = ? LIMIT 1', [req.user.userId]);
+    if (!profile) {
+      return res.status(404).json({ error: 'Không tìm thấy thông tin bệnh nhân.' });
+    }
+
+    const [[device]] = await pool.query('SELECT mac_address, device_tag FROM devices WHERE patient_id = ? LIMIT 1', [profile.id]);
+
+    const [[latestLog]] = await pool.query(`
+      SELECT temperature, humidity, recorded_at 
+      FROM sensor_logs 
+      WHERE patient_id = ? 
+      ORDER BY recorded_at DESC LIMIT 1
+    `, [profile.id]);
+
+    const [[latestDiagnosis]] = await pool.query(`
+      SELECT diagnosis_text, status 
+      FROM clinical_diagnoses 
+      WHERE patient_id = ? 
+      ORDER BY created_at DESC LIMIT 1
+    `, [profile.id]);
+
+    res.json({
+      profile,
+      device: device ? { macAddress: device.mac_address, deviceTag: device.device_tag } : null,
+      latestData: latestLog ? { 
+        temperature: Number(latestLog.temperature), 
+        humidity: Number(latestLog.humidity), 
+        time: latestLog.recorded_at 
+      } : null,
+      latestDiagnosis: latestDiagnosis ? { 
+        text: latestDiagnosis.diagnosis_text, 
+        status: latestDiagnosis.status 
+      } : null
+    });
+  } catch (err) {
+    console.error('[GET /api/patient/dashboard]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/patient/claim-device', requireAuth, requireRole(['patient']), async (req, res) => {
+  try {
+    const { deviceTag, device_tag, macAddress, mac_address } = req.body;
+    const normalizedTag = String(deviceTag || device_tag || '').trim();
+    const normalizedMac = String(macAddress || mac_address || '').trim();
+
+    if (!normalizedTag && !normalizedMac) {
+      return res.status(400).json({ error: 'Thiếu deviceTag hoặc MAC address của thiết bị.' });
+    }
+
+    const [[profile]] = await pool.query('SELECT id FROM patient_profiles WHERE user_id = ? LIMIT 1', [req.user.userId]);
+    if (!profile) {
+      return res.status(404).json({ error: 'Không tìm thấy thông tin bệnh nhân.' });
+    }
+
+    const [[device]] = await pool.query(
+      'SELECT id, patient_id, status, mac_address, device_tag FROM devices WHERE device_tag = ? OR mac_address = ? LIMIT 1',
+      [normalizedTag || '', normalizedMac || '']
+    );
+
+    if (device) {
+      if (device.patient_id && device.patient_id !== profile.id) {
+        return res.status(409).json({ error: 'Thiết bị này đã được gán cho bệnh nhân khác.' });
+      }
+
+      const updatedTag = normalizedTag || device.device_tag;
+      const updatedMac = normalizedMac || device.mac_address;
+      await pool.query(
+        'UPDATE devices SET patient_id = ?, status = ?, device_tag = ?, mac_address = ? WHERE id = ?',
+        [profile.id, 'active', updatedTag, updatedMac, device.id]
+      );
+
+      return res.json({
+        success: true,
+        message: 'Thiết bị đã được gán cho bạn.',
+        device: { macAddress: updatedMac, deviceTag: updatedTag }
+      });
+    }
+
+    const insertMac = normalizedMac || normalizedTag;
+    const insertTag = normalizedTag || null;
+
+    await pool.query(
+      'INSERT INTO devices (id, mac_address, device_tag, status, location, patient_id, created_at) VALUES (UUID(), ?, ?, ?, ?, ?, NOW())',
+      [insertMac, insertTag, 'active', 'Patient claimed device', profile.id]
+    );
+
+    res.json({ success: true, message: 'Thiết bị mới đã được tạo và gán cho bạn.', device: { macAddress: insertMac, deviceTag: insertTag } });
+  } catch (err) {
+    console.error('[POST /api/patient/claim-device]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.use((err, req, res, next) => {
+  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+    console.error('[JSON Syntax Error]', err.message);
+    return res.status(400).json({ error: 'JSON body không hợp lệ. Vui lòng gửi payload đúng JSON.' });
+  }
+  next(err);
+});
+
+// ── Server Listen ────────────────────────────────────────────
 const PORT = process.env.PORT || 8000;
-app.listen(PORT, () =>
-  console.log(`[Server] Dang chay tai http://localhost:${PORT}`)
-);
+
+async function startServer() {
+  try {
+    await ensureDeviceTagColumn();
+    server.listen(PORT, () =>
+      console.log(`[Server] Urticaria Monitoring System listening at http://localhost:${PORT}`)
+    );
+  } catch (err) {
+    console.error('[Server] Không thể khởi động do lỗi DB:', err.message);
+    process.exit(1);
+  }
+}
+
+startServer();

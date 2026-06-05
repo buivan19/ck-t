@@ -1,0 +1,103 @@
+[DB] Loi ket noi MySQL: 
+[POST /api/auth/register] AggregateError: 
+    at C:\Users\hp\Downloads\CKDT-main (1)\CKDT-main\server.js:122:37
+    at Layer.handle [as handle_request] (C:\Users\hp\Downloads\CKDT-main (1)\CKDT-main\node_modules\express\lib\router\layer.js:95:5)
+    at next (C:\Users\hp\Downloads\CKDT-main (1)\CKDT-main\node_modules\express\lib\router\route.js:149:13)
+    at Route.dispatch (C:\Users\hp\Downloads\CKDT-main (1)\CKDT-main\node_modules\express\lib\router\route.js:119:3)
+    at Layer.handle [as handle_request] (C:\Users\hp\Downloads\CKDT-main (1)\CKDT-main\node_modules\express\lib\router\layer.js:95:5)
+    at C:\Users\hp\Downloads\CKDT-main (1)\CKDT-main\node_modules\express\lib\router\index.js:284:15
+    at router.process_params (C:\Users\hp\Downloads\CKDT-main (1)\CKDT-main\node_modules\express\lib\router\index.js:346:12)
+    at next (C:\Users\hp\Downloads\CKDT-main (1)\CKDT-main\node_modules\express\lib\router\index.js:280:10)
+    at C:\Users\hp\Downloads\CKDT-main (1)\CKDT-main\node_modules\express\lib\router\index.js:646:15
+    at next (C:\Users\hp\Downloads\CKDT-main (1)\CKDT-main\node_modules\express\lib\router\index.js:265:14) {
+  code: 'ECONNREFUSED',
+  fatal: true,
+  [errors]: [
+    Error: connect ECONNREFUSED ::1:3306
+        at createConnectionError (node:net:1746:14)
+        at afterConnectMultiple (node:net:1776:16) {
+      errno: -4078,
+      code: 'ECONNREFUSED',
+      syscall: 'connect',
+      address: '::1',
+      port: 3306
+    },
+    Error: connect ECONNREFUSED 127.0.0.1:3306
+        at createConnectionError (node:net:1746:14)
+        at afterConnectMultiple (node:net:1776:16) {
+      errno: -4078,
+      code: 'ECONNREFUSED',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 3306
+    }
+  ]
+}
+[POST /api/auth/register] AggregateError: 
+    at C:\Users\hp\Downloads\CKDT-main (1)\CKDT-main\server.js:122:37
+    at Layer.handle [as handle_request] (C:\Users\hp\Downloads\CKDT-main (1)\CKDT-main\node_modules\express\lib\router\layer.js:95:5)
+    at next (C:\Users\hp\Downloads\CKDT-main (1)\CKDT-main\node_modules\express\lib\router\route.js:149:13)
+    at Route.dispatch (C:\Users\hp\Downloads\CKDT-main (1)\CKDT-main\node_modules\express\lib\router\route.js:119:3)
+    at Layer.handle [as handle_request] (C:\Users\hp\Downloads\CKDT-main (1)\CKDT-main\node_modules\express\lib\router\layer.js:95:5)
+    at C:\Users\hp\Downloads\CKDT-main (1)\CKDT-main\node_modules\express\lib\router\index.js:284:15
+    at router.process_params (C:\Users\hp\Downloads\CKDT-main (1)\CKDT-main\node_modules\express\lib\router\index.js:346:12)
+    at next (C:\Users\hp\Downloads\CKDT-main (1)\CKDT-main\node_modules\express\lib\router\index.js:280:10)
+    at C:\Users\hp\Downloads\CKDT-main (1)\CKDT-main\node_modules\express\lib\router\index.js:646:15
+    at next (C:\Users\hp\Downloads\CKDT-main (1)\CKDT-main\node_modules\express\lib\router\index.js:265:14) {
+  code: 'ECONNREFUSED',
+  fatal: true,
+  [errors]: [
+    Error: connect ECONNREFUSED ::1:3306
+        at createConnectionError (node:net:1746:14)
+        at afterConnectMultiple (node:net:1776:16) {
+      errno: -4078,
+      code: 'ECONNREFUSED',
+      syscall: 'connect',
+      address: '::1',
+      port: 3306
+    },
+    Error: connect ECONNREFUSED 127.0.0.1:3306
+        at createConnectionError (node:net:1746:14)
+        at afterConnectMultiple (node:net:1776:16) {
+      errno: -4078,
+      code: 'ECONNREFUSED',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 3306
+    }
+  ]
+}
+[POST /api/auth/register] AggregateError: 
+    at C:\Users\hp\Downloads\CKDT-main (1)\CKDT-main\server.js:122:37
+    at Layer.handle [as handle_request] (C:\Users\hp\Downloads\CKDT-main (1)\CKDT-main\node_modules\express\lib\router\layer.js:95:5)
+    at next (C:\Users\hp\Downloads\CKDT-main (1)\CKDT-main\node_modules\express\lib\router\route.js:149:13)
+    at Route.dispatch (C:\Users\hp\Downloads\CKDT-main (1)\CKDT-main\node_modules\express\lib\router\route.js:119:3)
+    at Layer.handle [as handle_request] (C:\Users\hp\Downloads\CKDT-main (1)\CKDT-main\node_modules\express\lib\router\layer.js:95:5)
+    at C:\Users\hp\Downloads\CKDT-main (1)\CKDT-main\node_modules\express\lib\router\index.js:284:15
+    at router.process_params (C:\Users\hp\Downloads\CKDT-main (1)\CKDT-main\node_modules\express\lib\router\index.js:346:12)
+    at next (C:\Users\hp\Downloads\CKDT-main (1)\CKDT-main\node_modules\express\lib\router\index.js:280:10)
+    at C:\Users\hp\Downloads\CKDT-main (1)\CKDT-main\node_modules\express\lib\router\index.js:646:15
+    at next (C:\Users\hp\Downloads\CKDT-main (1)\CKDT-main\node_modules\express\lib\router\index.js:265:14) {
+  code: 'ECONNREFUSED',
+  fatal: true,
+  [errors]: [
+    Error: connect ECONNREFUSED ::1:3306
+        at createConnectionError (node:net:1746:14)
+        at afterConnectMultiple (node:net:1776:16) {
+      errno: -4078,
+      code: 'ECONNREFUSED',
+      syscall: 'connect',
+      address: '::1',
+      port: 3306
+    },
+    Error: connect ECONNREFUSED 127.0.0.1:3306
+        at createConnectionError (node:net:1746:14)
+        at afterConnectMultiple (node:net:1776:16) {
+      errno: -4078,
+      code: 'ECONNREFUSED',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 3306
+    }
+  ]
+}
