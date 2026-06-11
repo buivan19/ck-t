@@ -17,39 +17,64 @@ function classifyHumidity(humid) {
   return 'Rất ẩm';
 }
 
-function diagnose(temp, humid) {
+function diagnose(temp, humid, roomTemp) {
+  let status = 'normal';
+  let skinText = '';
+
+  // 1. Skin Temp (MLX90614)
   if (temp < 25 || temp > 40) {
-    return {
-      status: 'urgent',
-      text: `Thiết bị đang đo sai / hỏng cảm biến. Nhiệt độ ${temp}°C nằm ngoài khoảng 25-40°C.`
-    };
+    status = 'urgent';
+    skinText = `Cảm biến hỏng hoặc lắp sai (Nhiệt độ da ${temp}°C ngoài khoảng 25-40°C).`;
+  } else if (temp > 37.5) {
+    status = 'warning';
+    skinText = `Nhiệt độ da cao (${temp}°C), nguy cơ kích ứng/sốt.`;
+  } else {
+    skinText = `Nhiệt độ da ổn định (${temp}°C).`;
   }
 
-  const humidityLabel = classifyHumidity(humid);
-  const message = `Độ ẩm da: ${humidityLabel} (${humid}%).`;
-
-  if (humid > 80) {
-    return {
-      status: 'warning',
-      text: `${message} Hãy kiểm tra tình trạng da và tình trạng kích ứng.`
-    };
+  // 2. Room Climate (DHT22)
+  let roomTempText = 'Nhiệt độ phòng bình thường.';
+  if (roomTemp != null) {
+    const rt = parseFloat(roomTemp);
+    if (rt > 30) {
+      roomTempText = `Phòng quá nóng (${rt}°C).`;
+      if (status !== 'urgent') status = 'warning';
+    } else if (rt < 18) {
+      roomTempText = `Phòng quá lạnh (${rt}°C).`;
+      if (status !== 'urgent') status = 'warning';
+    } else {
+      roomTempText = `Nhiệt độ phòng dễ chịu (${rt}°C).`;
+    }
   }
 
-  return {
-    status: 'normal',
-    text: `${message} Tình trạng da ổn định.`
-  };
+  let roomHumidText = 'Độ ẩm phòng bình thường.';
+  if (humid != null) {
+    const rh = parseFloat(humid);
+    if (rh > 75) {
+      roomHumidText = `Phòng quá ẩm (${rh}% - nguy cơ kích ứng).`;
+      if (status !== 'urgent') status = 'warning';
+    } else if (rh < 40) {
+      roomHumidText = `Phòng quá khô (${rh}% - dễ gây khô da).`;
+      if (status !== 'urgent') status = 'warning';
+    } else {
+      roomHumidText = `Độ ẩm phòng dễ chịu (${rh}%).`;
+    }
+  }
+
+  const diagnosisText = `${skinText} | ${roomTempText} | ${roomHumidText}`;
+  return { status, text: diagnosisText };
 }
 
 exports.nhanDuLieuESP = async (req, res) => {
   let conn = null;
   try {
     conn = await pool.getConnection();
-    const { device_tag, deviceTag, device_mac, mac_address, temperature, humidity, mac, temp, hum, t, h, id } = req.body;
+    const { device_tag, deviceTag, device_mac, mac_address, temperature, humidity, mac, temp, hum, t, h, id, room_temperature, room_temp, roomTemp, rt } = req.body;
     const deviceTagValue = device_tag || deviceTag;
     const macAddress = device_mac || mac_address || mac || id;
     const temperatureRaw = temperature ?? temp ?? t;
     const humidityRaw = humidity ?? hum ?? h;
+    const roomTemperatureRaw = room_temperature ?? room_temp ?? roomTemp ?? rt ?? null;
 
     if ((!deviceTagValue && !macAddress) || temperatureRaw == null || humidityRaw == null) {
       if (conn) conn.release();
@@ -104,23 +129,24 @@ exports.nhanDuLieuESP = async (req, res) => {
 
     const tempVal = parseFloat(temperatureRaw);
     const humidVal = parseFloat(humidityRaw);
+    const roomTempVal = roomTemperatureRaw != null ? parseFloat(roomTemperatureRaw) : null;
 
     // 2. Perform diagnosis
-    const diagnosis = diagnose(tempVal, humidVal);
+    const diagnosis = diagnose(tempVal, humidVal, roomTempVal);
 
     // Always insert sensor_logs (patient_id may be null)
     await conn.query(
-      `INSERT INTO sensor_logs (device_id, patient_id, temperature, humidity, recorded_at)
-       VALUES (?, ?, ?, ?, NOW())`,
-      [device.id, device.patient_id || null, tempVal, humidVal]
+      `INSERT INTO sensor_logs (device_id, patient_id, temperature, humidity, room_temperature, recorded_at)
+       VALUES (?, ?, ?, ?, ?, NOW())`,
+      [device.id, device.patient_id || null, tempVal, humidVal, roomTempVal]
     );
 
     // If device assigned to a patient, insert clinical diagnosis and update device status on urgent
     if (device.patient_id) {
       await conn.query(
-        `INSERT INTO clinical_diagnoses (id, patient_id, device_id, temperature, humidity, diagnosis_text, status, created_at)
-         VALUES (UUID(), ?, ?, ?, ?, ?, ?, NOW())`,
-        [device.patient_id, device.id, tempVal, humidVal, diagnosis.text, diagnosis.status]
+        `INSERT INTO clinical_diagnoses (id, patient_id, device_id, temperature, humidity, room_temperature, diagnosis_text, status, created_at)
+         VALUES (UUID(), ?, ?, ?, ?, ?, ?, ?, NOW())`,
+        [device.patient_id, device.id, tempVal, humidVal, roomTempVal, diagnosis.text, diagnosis.status]
       );
 
       if (diagnosis.status === 'urgent') {
@@ -135,6 +161,7 @@ exports.nhanDuLieuESP = async (req, res) => {
         macAddress: macAddress,
         temperature: tempVal,
         humidity: humidVal,
+        roomTemperature: roomTempVal,
         patientId: device.patient_id || null,
         diagnosis: diagnosis,
         saved: !!device.patient_id

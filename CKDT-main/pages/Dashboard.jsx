@@ -162,14 +162,18 @@ function DetailChartModal({ session, onClose }) {
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, margin: '16px 0' }}>
-          <div style={{ background: '#f8fafc', padding: 12, borderRadius: 8, textAlign: 'center', border: '1px solid #e2e8f0' }}>
-            <span style={{ fontSize: 12, color: '#64748b', display: 'block', marginBottom: 4 }}>Nhiệt độ hiện tại</span>
-            <strong style={{ fontSize: 24, color: '#ef4444' }}>{session.temperature ? `${session.temperature}°C` : '—'}</strong>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, margin: '16px 0' }}>
+          <div style={{ background: '#fff1f2', padding: 12, borderRadius: 8, textAlign: 'center', border: '1px solid #fecdd3' }}>
+            <span style={{ fontSize: 12, color: '#be123c', display: 'block', marginBottom: 4, fontWeight: 600 }}>Nhiệt độ da (MLX)</span>
+            <strong style={{ fontSize: 20, color: '#e11d48' }}>{session.temperature ? `${session.temperature}°C` : '—'}</strong>
           </div>
-          <div style={{ background: '#f8fafc', padding: 12, borderRadius: 8, textAlign: 'center', border: '1px solid #e2e8f0' }}>
-            <span style={{ fontSize: 12, color: '#64748b', display: 'block', marginBottom: 4 }}>Độ ẩm hiện tại</span>
-            <strong style={{ fontSize: 24, color: '#0284c7' }}>{session.humidity ? `${session.humidity}%` : '—'}</strong>
+          <div style={{ background: '#f0fdf4', padding: 12, borderRadius: 8, textAlign: 'center', border: '1px solid #bbf7d0' }}>
+            <span style={{ fontSize: 12, color: '#15803d', display: 'block', marginBottom: 4, fontWeight: 600 }}>Nhiệt độ phòng (DHT)</span>
+            <strong style={{ fontSize: 20, color: '#16a34a' }}>{session.roomTemperature ? `${session.roomTemperature}°C` : '—'}</strong>
+          </div>
+          <div style={{ background: '#f0fdf4', padding: 12, borderRadius: 8, textAlign: 'center', border: '1px solid #bbf7d0' }}>
+            <span style={{ fontSize: 12, color: '#15803d', display: 'block', marginBottom: 4, fontWeight: 600 }}>Độ ẩm phòng (DHT)</span>
+            <strong style={{ fontSize: 20, color: '#0284c7' }}>{session.humidity ? `${session.humidity}%` : '—'}</strong>
           </div>
         </div>
 
@@ -186,12 +190,13 @@ function DetailChartModal({ session, onClose }) {
               <LineChart data={chartData} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                 <XAxis dataKey="time" stroke="#94a3b8" style={{ fontSize: 10 }} />
-                <YAxis yAxisId="left" stroke="#ef4444" style={{ fontSize: 10 }} domain={[34, 40]} unit="°C" />
-                <YAxis yAxisId="right" orientation="right" stroke="#0284c7" style={{ fontSize: 10 }} domain={[40, 100]} unit="%" />
+                <YAxis yAxisId="left" stroke="#ef4444" style={{ fontSize: 10 }} domain={[15, 42]} unit="°C" />
+                <YAxis yAxisId="right" orientation="right" stroke="#0284c7" style={{ fontSize: 10 }} domain={[20, 100]} unit="%" />
                 <Tooltip />
                 <Legend style={{ fontSize: 11 }} />
-                <Line yAxisId="left" type="monotone" dataKey="temperature" name="Nhiệt độ (°C)" stroke="#ef4444" strokeWidth={2} dot={false} />
-                <Line yAxisId="right" type="monotone" dataKey="humidity" name="Độ ẩm (%)" stroke="#0284c7" strokeWidth={2} dot={false} />
+                <Line yAxisId="left" type="monotone" dataKey="temperature" name="Nhiệt độ da (MLX)" stroke="#e11d48" strokeWidth={2} dot={false} />
+                <Line yAxisId="left" type="monotone" dataKey="roomTemperature" name="Nhiệt độ phòng (DHT)" stroke="#16a34a" strokeWidth={2} dot={false} />
+                <Line yAxisId="right" type="monotone" dataKey="humidity" name="Độ ẩm phòng (DHT)" stroke="#0284c7" strokeWidth={2} dot={false} />
               </LineChart>
             </ResponsiveContainer>
           </div>

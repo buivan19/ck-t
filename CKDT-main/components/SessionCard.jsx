@@ -67,22 +67,41 @@ export default function SessionCard({ session, onViewDetail }) {
 
       {/* Body */}
       <div className="card-body" style={{ padding: '12px 16px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
-          <div style={{ background: '#f8fafc', padding: 8, borderRadius: 8, textAlign: 'center' }}>
-            <span style={{ fontSize: 11, color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, marginBottom: 2 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1.3fr', gap: 10, marginBottom: 12 }}>
+          {/* MLX90614 Skin Temperature (Left Side) */}
+          <div style={{ background: '#fff1f2', border: '1px solid #fecdd3', padding: '10px 8px', borderRadius: 10, textAlign: 'center', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+            <span style={{ fontSize: 11, color: '#be123c', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, marginBottom: 4 }}>
               <IconTemp /> Nhiệt độ da
             </span>
-            <span style={{ fontSize: 16, fontWeight: 750, color: session.status === 'urgent' || (session.temperature > 37.5) ? '#ef4444' : '#0f172a' }}>
+            <span style={{ fontSize: 18, fontWeight: 800, color: '#e11d48' }}>
               {session.temperature ? `${session.temperature}°C` : '—'}
             </span>
+            <span style={{ fontSize: 9, color: '#be123c', marginTop: 2, fontWeight: 500 }}>MLX90614</span>
           </div>
-          <div style={{ background: '#f8fafc', padding: 8, borderRadius: 8, textAlign: 'center' }}>
-            <span style={{ fontSize: 11, color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, marginBottom: 2 }}>
-              <IconHumid /> Độ ẩm da
-            </span>
-            <span style={{ fontSize: 16, fontWeight: 750, color: session.status === 'urgent' || (session.humidity > 80) ? '#0284c7' : '#0f172a' }}>
-              {session.humidity ? `${session.humidity}%` : '—'}
-            </span>
+
+          {/* DHT22 Room Climate (Right Side) */}
+          <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '10px 8px', borderRadius: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ fontSize: 10, color: '#15803d', fontWeight: 700, textAlign: 'center', borderBottom: '1px dashed #bbf7d0', paddingBottom: 4 }}>
+              Khí hậu phòng (DHT22)
+            </div>
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 4px' }}>
+              <span style={{ fontSize: 10, color: '#475569', display: 'flex', alignItems: 'center', gap: 2 }}>
+                <IconTemp /> Temp:
+              </span>
+              <strong style={{ fontSize: 12, color: '#0f172a' }}>
+                {session.roomTemperature ? `${session.roomTemperature}°C` : '—'}
+              </strong>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 4px' }}>
+              <span style={{ fontSize: 10, color: '#475569', display: 'flex', alignItems: 'center', gap: 2 }}>
+                <IconHumid /> Humid:
+              </span>
+              <strong style={{ fontSize: 12, color: '#0f172a' }}>
+                {session.humidity ? `${session.humidity}%` : '—'}
+              </strong>
+            </div>
           </div>
         </div>
 

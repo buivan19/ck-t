@@ -13,23 +13,30 @@ function simulateDevice(macAddress, patientName) {
   console.log(`[ESP-${macAddress}] Bắt đầu gửi dữ liệu cho bệnh nhân: ${patientName}`);
 
   let baseTemp = 36.5;
+  let baseRoomTemp = 26.0;
   let baseHumid = 65.0;
 
   const timer = setInterval(async () => {
-    // Biến động nhiệt độ từ 36.0°C - 39.0°C
+    // Biến động nhiệt độ từ 36.0°C - 39.0°C (nhiệt độ da)
     baseTemp += (Math.random() * 0.4 - 0.2);
     if (baseTemp < 36.0) baseTemp = 36.0;
     if (baseTemp > 39.0) baseTemp = 39.0;
 
-    // Biến động độ ẩm từ 50% - 95%
+    // Biến động nhiệt độ phòng từ 22.0°C - 33.0°C
+    baseRoomTemp += (Math.random() * 0.6 - 0.3);
+    if (baseRoomTemp < 22.0) baseRoomTemp = 22.0;
+    if (baseRoomTemp > 33.0) baseRoomTemp = 33.0;
+
+    // Biến động độ ẩm từ 35% - 85%
     baseHumid += (Math.random() * 4 - 2);
-    if (baseHumid < 50.0) baseHumid = 50.0;
-    if (baseHumid > 95.0) baseHumid = 95.0;
+    if (baseHumid < 35.0) baseHumid = 35.0;
+    if (baseHumid > 85.0) baseHumid = 85.0;
 
     const payload = {
       device_mac:  macAddress,
       device_tag: macAddress,
       temperature: parseFloat(baseTemp.toFixed(2)),
+      room_temperature: parseFloat(baseRoomTemp.toFixed(2)),
       humidity:    parseFloat(baseHumid.toFixed(2)),
     };
 
@@ -41,8 +48,9 @@ function simulateDevice(macAddress, patientName) {
       });
       const data = await res.json(); 
       console.log(
-        `[ESP-${macAddress}] Nhiệt độ: ${payload.temperature}°C | ` +
-        `Độ ẩm: ${payload.humidity}% | Chẩn đoán: ${data.diagnosis || 'Không rõ'}`
+        `[ESP-${macAddress}] Nhiệt độ da: ${payload.temperature}°C | ` +
+        `Nhiệt độ phòng: ${payload.room_temperature}°C | Độ ẩm: ${payload.humidity}% | ` +
+        `Chẩn đoán: ${data.diagnosis || 'Không rõ'}`
       );
     } catch (err) {
       console.error(`[ESP-${macAddress}] ❌ Không kết nối được server!`);

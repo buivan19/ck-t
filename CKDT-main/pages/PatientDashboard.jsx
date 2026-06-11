@@ -28,6 +28,7 @@ export default function PatientDashboard() {
   const [claimStatus, setClaimStatus] = useState(null)
   const [socket, setSocket] = useState(null)
   const [watchingTag, setWatchingTag] = useState(null)
+  const [showGuideModal, setShowGuideModal] = useState(false)
 
   const handleLogout = async () => {
     await logout()
@@ -204,14 +205,24 @@ export default function PatientDashboard() {
               Tài khoản: {user?.email} • Vai trò: {user?.role}
             </div>
           </div>
-          <button 
-            onClick={handleLogout}
-            style={{ padding: '8px 16px', background: '#f1f5f9', border: 'none', borderRadius: 8, color: '#475569', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s' }}
-            onMouseOver={e => e.target.style.background = '#e2e8f0'}
-            onMouseOut={e => e.target.style.background = '#f1f5f9'}
-          >
-            Đăng xuất
-          </button>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button 
+              onClick={() => setShowGuideModal(true)}
+              style={{ padding: '8px 16px', background: '#e0f2fe', border: '1px solid #bae6fd', borderRadius: 8, color: '#0369a1', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: 6 }}
+              onMouseOver={e => e.target.style.background = '#bae6fd'}
+              onMouseOut={e => e.target.style.background = '#e0f2fe'}
+            >
+              💡 Hướng dẫn đo
+            </button>
+            <button 
+              onClick={handleLogout}
+              style={{ padding: '8px 16px', background: '#f1f5f9', border: 'none', borderRadius: 8, color: '#475569', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s' }}
+              onMouseOver={e => e.target.style.background = '#e2e8f0'}
+              onMouseOut={e => e.target.style.background = '#f1f5f9'}
+            >
+              Đăng xuất
+            </button>
+          </div>
         </div>
 
         {error && (
@@ -221,29 +232,42 @@ export default function PatientDashboard() {
         )}
 
         {/* Top Widgets Grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20, marginBottom: 24 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 20, marginBottom: 24 }}>
           
           {/* Temperature Widget */}
-          <div style={{ background: '#fff', borderRadius: 16, padding: 24, border: '1px solid #e2e8f0', boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.05)', display: 'flex', alignItems: 'center', gap: 20 }}>
-            <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#fee2e2', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ef4444' }}>
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></svg>
+          <div style={{ background: '#fff', borderRadius: 16, padding: 20, border: '1px solid #e2e8f0', boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.05)', display: 'flex', alignItems: 'center', gap: 16 }}>
+            <div style={{ width: 48, height: 48, borderRadius: '50%', background: '#fee2e2', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ef4444', flexShrink: 0 }}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></svg>
             </div>
             <div>
-              <div style={{ fontSize: 14, color: '#64748b', fontWeight: 500 }}>Nhiệt độ da</div>
-              <div style={{ fontSize: 32, fontWeight: 800, color: '#0f172a' }}>
+              <div style={{ fontSize: 13, color: '#be123c', fontWeight: 600 }}>Nhiệt độ da (MLX)</div>
+              <div style={{ fontSize: 24, fontWeight: 800, color: '#e11d48' }}>
                 {latestData ? `${latestData.temperature}°C` : '—'}
               </div>
             </div>
           </div>
 
-          {/* Humidity Widget */}
-          <div style={{ background: '#fff', borderRadius: 16, padding: 24, border: '1px solid #e2e8f0', boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.05)', display: 'flex', alignItems: 'center', gap: 20 }}>
-            <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#e0f2fe', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0284c7' }}>
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></svg>
+          {/* Room Temperature Widget */}
+          <div style={{ background: '#fff', borderRadius: 16, padding: 20, border: '1px solid #e2e8f0', boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.05)', display: 'flex', alignItems: 'center', gap: 16 }}>
+            <div style={{ width: 48, height: 48, borderRadius: '50%', background: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#16a34a', flexShrink: 0 }}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></svg>
             </div>
             <div>
-              <div style={{ fontSize: 14, color: '#64748b', fontWeight: 500 }}>Độ ẩm da</div>
-              <div style={{ fontSize: 32, fontWeight: 800, color: '#0f172a' }}>
+              <div style={{ fontSize: 13, color: '#15803d', fontWeight: 600 }}>Nhiệt độ phòng (DHT)</div>
+              <div style={{ fontSize: 24, fontWeight: 800, color: '#16a34a' }}>
+                {latestData ? `${latestData.roomTemperature}°C` : '—'}
+              </div>
+            </div>
+          </div>
+
+          {/* Room Humidity Widget */}
+          <div style={{ background: '#fff', borderRadius: 16, padding: 20, border: '1px solid #e2e8f0', boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.05)', display: 'flex', alignItems: 'center', gap: 16 }}>
+            <div style={{ width: 48, height: 48, borderRadius: '50%', background: '#e0f2fe', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0284c7', flexShrink: 0 }}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></svg>
+            </div>
+            <div>
+              <div style={{ fontSize: 13, color: '#0369a1', fontWeight: 600 }}>Độ ẩm phòng (DHT)</div>
+              <div style={{ fontSize: 24, fontWeight: 800, color: '#0284c7' }}>
                 {latestData ? `${latestData.humidity}%` : '—'}
               </div>
             </div>
@@ -376,18 +400,70 @@ export default function PatientDashboard() {
               <LineChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                 <XAxis dataKey="time" stroke="#94a3b8" style={{ fontSize: 11 }} />
-                <YAxis yAxisId="left" stroke="#ef4444" style={{ fontSize: 11 }} domain={[34, 40]} unit="°C" />
-                <YAxis yAxisId="right" orientation="right" stroke="#0284c7" style={{ fontSize: 11 }} domain={[40, 100]} unit="%" />
+                <YAxis yAxisId="left" stroke="#ef4444" style={{ fontSize: 11 }} domain={[15, 42]} unit="°C" />
+                <YAxis yAxisId="right" orientation="right" stroke="#0284c7" style={{ fontSize: 11 }} domain={[20, 100]} unit="%" />
                 <Tooltip contentStyle={{ background: '#fff', borderRadius: 8, border: '1px solid #cbd5e1' }} />
                 <Legend style={{ fontSize: 12 }} />
-                <Line yAxisId="left" type="monotone" dataKey="temperature" name="Nhiệt độ (°C)" stroke="#ef4444" strokeWidth={2.5} activeDot={{ r: 6 }} dot={false} />
-                <Line yAxisId="right" type="monotone" dataKey="humidity" name="Độ ẩm (%)" stroke="#0284c7" strokeWidth={2.5} activeDot={{ r: 6 }} dot={false} />
+                <Line yAxisId="left" type="monotone" dataKey="temperature" name="Nhiệt độ da (MLX)" stroke="#e11d48" strokeWidth={2.5} activeDot={{ r: 6 }} dot={false} />
+                <Line yAxisId="left" type="monotone" dataKey="roomTemperature" name="Nhiệt độ phòng (DHT)" stroke="#16a34a" strokeWidth={2.5} activeDot={{ r: 6 }} dot={false} />
+                <Line yAxisId="right" type="monotone" dataKey="humidity" name="Độ ẩm phòng (DHT)" stroke="#0284c7" strokeWidth={2.5} activeDot={{ r: 6 }} dot={false} />
               </LineChart>
             </ResponsiveContainer>
           </div>
         </div>
 
       </div>
+
+      {showGuideModal && (
+        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) setShowGuideModal(false) }}>
+          <div className="modal-box" style={{ maxWidth: 500, width: '90%', padding: 24, borderRadius: 16 }}>
+            <div className="modal-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: 12, marginBottom: 16 }}>
+              <h3 style={{ fontSize: 18, fontWeight: 700, color: '#0f172a', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span>💡</span> Hướng dẫn đo nhiệt độ da (MLX90614)
+              </h3>
+              <button onClick={() => setShowGuideModal(false)} style={{ background: 'none', border: 'none', fontSize: 18, cursor: 'pointer', color: '#64748b' }}>✕</button>
+            </div>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16, color: '#334155', fontSize: 14, lineHeight: 1.6 }}>
+              <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: 12, borderRadius: 10, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                <span style={{ fontSize: 20 }}>📏</span>
+                <div>
+                  <strong style={{ color: '#15803d', display: 'block', marginBottom: 2 }}>Khoảng cách đo tối ưu</strong>
+                  Đặt tay (hoặc vùng da cần đo) cách cảm biến hồng ngoại MLX90614 một khoảng từ <strong>1cm đến 2cm</strong>.
+                </div>
+              </div>
+
+              <div style={{ background: '#fffbeb', border: '1px solid #fef3c7', padding: 12, borderRadius: 10, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                <span style={{ fontSize: 20 }}>⚠️</span>
+                <div>
+                  <strong style={{ color: '#b45309', display: 'block', marginBottom: 2 }}>Lưu ý quan trọng</strong>
+                  <ul style={{ margin: 0, paddingLeft: 18, listStyleType: 'disc' }}>
+                    <li>Không chạm trực tiếp da vào bề mặt kim loại của cảm biến MLX90614 để tránh làm sai lệch nhiệt độ.</li>
+                    <li>Không đặt tay quá xa (&gt; 5cm) vì cảm biến sẽ đo lẫn nhiệt độ môi trường xung quanh, dẫn tới kết quả đo thấp hơn thực tế.</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', padding: 12, borderRadius: 10, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                <span style={{ fontSize: 20 }}>⏱️</span>
+                <div>
+                  <strong style={{ color: '#475569', display: 'block', marginBottom: 2 }}>Thời gian đo ổn định</strong>
+                  Giữ nguyên vị trí tay trong khoảng từ <strong>3 - 5 giây</strong> để cảm biến thu thập chỉ số ổn định nhất và hiển thị lên đồ thị.
+                </div>
+              </div>
+            </div>
+
+            <div style={{ marginTop: 24, textAlign: 'right' }}>
+              <button 
+                onClick={() => setShowGuideModal(false)}
+                style={{ padding: '8px 20px', background: '#0f172a', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer' }}
+              >
+                Đã hiểu
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
