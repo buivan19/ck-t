@@ -9,13 +9,17 @@ async function run() {
   
   // Connect without DB first to create database
   const connection = await mysql.createConnection({
-    host:     process.env.DB_HOST || 'localhost',
+    host:     process.env.DB_HOST || '127.0.0.1',
     port:     Number(process.env.DB_PORT) || 3306,
     user:     process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || '',
+    password: process.env.DB_PASSWORD || 'rootpass',
+    multipleStatements: true,
   });
 
   try {
+    await connection.query(`CREATE DATABASE IF NOT EXISTS \`${process.env.DB_NAME || 'urticaria_monitoring'}\``);
+    await connection.query(`USE \`${process.env.DB_NAME || 'urticaria_monitoring'}\``);
+
     const sqlPath = path.join(__dirname, 'urticaria_db.sql');
     const sqlContent = fs.readFileSync(sqlPath, 'utf8');
 
