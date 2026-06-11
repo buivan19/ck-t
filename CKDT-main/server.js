@@ -47,6 +47,26 @@ async function ensureDeviceTagColumn() {
   }
 }
 
+async function ensureRoomTemperatureColumn() {
+  try {
+    // 1. Check sensor_logs table
+    const [rowsLogs] = await pool.query("SHOW COLUMNS FROM sensor_logs LIKE 'room_temperature'");
+    if (!rowsLogs || rowsLogs.length === 0) {
+      console.log('[DB] Thêm cột room_temperature vào bảng sensor_logs...');
+      await pool.query("ALTER TABLE sensor_logs ADD COLUMN room_temperature decimal(5,2) DEFAULT NULL");
+    }
+    // 2. Check clinical_diagnoses table
+    const [rowsDiag] = await pool.query("SHOW COLUMNS FROM clinical_diagnoses LIKE 'room_temperature'");
+    if (!rowsDiag || rowsDiag.length === 0) {
+      console.log('[DB] Thêm cột room_temperature vào bảng clinical_diagnoses...');
+      await pool.query("ALTER TABLE clinical_diagnoses ADD COLUMN room_temperature decimal(5,2) DEFAULT NULL");
+    }
+  } catch (err) {
+    console.error('[DB] Lỗi khi đảm bảo cột room_temperature:', err.message);
+    throw err;
+  }
+}
+
 // Create HTTP server and Socket.IO for realtime updates
 const server = http.createServer(app);
 const io = new Server(server, {
@@ -122,9 +142,52 @@ io.on('connection', (socket) => {
 
 // ── Simple In-Memory Token Store ─────────────────────────────
 const tokenStore = new Map();
+let dbReady = false;
+
+const mockUsers = [
+  { id: 1, name: 'Bác sĩ Minh', email: 'bacsi@hospital.com', password: '123456', role: 'doctor' },
+  { id: 2, name: 'Kỹ sư An', email: 'engineer@hospital.com', password: '123456', role: 'engineer' },
+  { id: 3, name: 'Bệnh nhân Trang', email: 'benhnhan@hospital.com', password: '123456', role: 'patient' },
+];
+
+const mockDevices = [
+  { id: 'dev-001', deviceId: 'ESP32-001', macAddress: 'AA:BB:CC:DD:EE:01', status: 'active', location: 'Phòng 101', patientId: 1, deviceTag: 'TAG-001', createdAt: new Date().toISOString() },
+  { id: 'dev-002', deviceId: 'ESP32-002', macAddress: 'AA:BB:CC:DD:EE:02', status: 'available', location: 'Kho thiết bị', patientId: null, deviceTag: 'TAG-002', createdAt: new Date().toISOString() },
+];
+
+const mockPatients = [
+  { id: 1, name: 'Nguyễn Văn A', age: 45, gender: 'Nam', phone: '0901111111', room: '101', bed: '101', condition: 'sốt' },
+  { id: 2, name: 'Trần Thị B', age: 32, gender: 'Nữ', phone: '0902222222', room: '102', bed: '201', condition: 'viêm da' },
+];
+
+let mockSessions = [
+  { id: 'session-001', patientId: 1, patientName: 'Nguyễn Văn A', age: 45, room: '101', bed: '101', condition: 'sốt', deviceId: 'ESP32-001', fluidType: 'NaCl 0.9%', volumeInitial: 1000, volumeRemaining: 980, dropRate: 80, doctor: 'Bác sĩ Minh', ended: false, status: 'normal', manualError: false },
+  { id: 'session-002', patientId: 2, patientName: 'Trần Thị B', age: 32, room: '102', bed: '201', condition: 'viêm da', deviceId: 'ESP32-002', fluidType: 'Ringer Lactate', volumeInitial: 800, volumeRemaining: 320, dropRate: 60, doctor: 'Bác sĩ Minh', ended: false, status: 'warning', manualError: false },
+];
+
+let mockDiagnoses = [
+  { id: 'diag-001', patientId: 1, patientName: 'Nguyễn Văn A', severity: 'normal', summary: 'Theo dõi ổn định' },
+  { id: 'diag-002', patientId: 2, patientName: 'Trần Thị B', severity: 'warning', summary: 'Cần kiểm tra tốc độ truyền' },
+];
 
 function generateToken() {
   return crypto.randomBytes(32).toString('hex');
+}
+
+function getMockUserByEmail(email) {
+  return mockUsers.find(u => u.email === email) || null;
+}
+
+function getMockUserFromToken(token) {
+  return tokenStore.get(token) || null;
+}
+
+function getMockSessionById(id) {
+  return mockSessions.find(s => s.id === id || s.patientId === Number(id));
+}
+
+function getMockDeviceById(id) {
+  return mockDevices.find(d => d.id === id || d.deviceId === id);
 }
 
 // Authentication Middlewares
@@ -158,6 +221,143 @@ app.use('/api', exportRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
+
+app.use('/api', (req, res, next) => {
+  if (dbReady) return next();
+
+  const path = req.path || '';
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.replace('Bearer ', '').trim();
+
+  if (req.method === 'POST' && path === '/auth/login') {
+    const { email, password } = req.body || {};
+    const user = getMockUserByEmail(email);
+    if (!user || user.password !== password) {
+      return res.status(401).json({ error: 'Email hoặc mật khẩu không đúng.' });
+    }
+    const newToken = generateToken();
+    tokenStore.set(newToken, { userId: user.id, role: user.role, name: user.name, email: user.email });
+    return res.json({ token: newToken, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
+  }
+
+  if (req.method === 'GET' && path === '/auth/me') {
+    const user = getMockUserFromToken(token);
+    if (!user) return res.status(401).json({ error: 'Chưa đăng nhập hoặc phiên hết hạn.' });
+    return res.json({ user: { id: user.userId, name: user.name, email: user.email, role: user.role } });
+  }
+
+  if (req.method === 'POST' && path === '/auth/logout') {
+    if (token) tokenStore.delete(token);
+    return res.json({ success: true });
+  }
+
+  if (req.method === 'POST' && path === '/auth/register') {
+    const { email, password, name, role } = req.body || {};
+    if (!email || !password || !name) return res.status(400).json({ error: 'Thiếu thông tin đăng ký.' });
+    const newUser = { id: mockUsers.length + 1, name, email, password, role: role || 'patient' };
+    mockUsers.push(newUser);
+    return res.json({ success: true, user: { id: newUser.id, name: newUser.name, email: newUser.email, role: newUser.role } });
+  }
+
+  if (req.method === 'GET' && path === '/sessions') {
+    return res.json(mockSessions);
+  }
+
+  if (req.method === 'POST' && path === '/sessions') {
+    const { patientId, deviceId } = req.body || {};
+    const patient = mockPatients.find(p => p.id === Number(patientId));
+    const device = mockDevices.find(d => d.id === deviceId || d.deviceId === deviceId);
+    const session = {
+      id: `session-${mockSessions.length + 1}`,
+      patientId: patient?.id || 1,
+      patientName: patient?.name || 'Bệnh nhân mới',
+      age: patient?.age || 30,
+      room: patient?.room || '101',
+      bed: patient?.bed || '101',
+      condition: patient?.condition || 'đang theo dõi',
+      deviceId: device?.deviceId || deviceId || 'ESP32-NEW',
+      fluidType: 'NaCl 0.9%',
+      volumeInitial: 1000,
+      volumeRemaining: 1000,
+      dropRate: 80,
+      doctor: 'Bác sĩ Minh',
+      ended: false,
+      status: 'normal',
+      manualError: false,
+    };
+    mockSessions.push(session);
+    return res.json(session);
+  }
+
+  if (req.method === 'PATCH' && /^\/sessions\/([^/]+)\/end$/.test(path)) {
+    const match = path.match(/^\/sessions\/([^/]+)\/end$/);
+    const id = match[1];
+    mockSessions = mockSessions.map(s => s.id === id || String(s.patientId) === id ? { ...s, ended: true, status: 'completed' } : s);
+    return res.json({ success: true });
+  }
+
+  if (req.method === 'GET' && /^\/sessions\/([^/]+)\/metrics$/.test(path)) {
+    const match = path.match(/^\/sessions\/([^/]+)\/metrics$/);
+    const session = getMockSessionById(match[1]);
+    if (!session) return res.status(404).json({ error: 'Không tìm thấy phiên' });
+    return res.json({ sessionId: session.id, metrics: [{ time: '10:00', pressure: 84 }, { time: '10:05', pressure: 87 }] });
+  }
+
+  if (req.method === 'GET' && path === '/devices') {
+    return res.json(mockDevices);
+  }
+
+  if (req.method === 'POST' && path === '/devices') {
+    const device = { id: `dev-${mockDevices.length + 1}`, ...req.body, status: 'active', createdAt: new Date().toISOString() };
+    mockDevices.push(device);
+    return res.json(device);
+  }
+
+  if (req.method === 'DELETE' && /^\/devices\/([^/]+)$/.test(path)) {
+    const match = path.match(/^\/devices\/([^/]+)$/);
+    mockDevices = mockDevices.filter(d => d.id !== match[1] && d.deviceId !== match[1]);
+    return res.json({ success: true });
+  }
+
+  if (req.method === 'POST' && /^\/devices\/([^/]+)\/report$/.test(path)) {
+    return res.json({ success: true });
+  }
+
+  if (req.method === 'GET' && path === '/patients') {
+    return res.json(mockPatients);
+  }
+
+  if (req.method === 'POST' && path === '/patients') {
+    const patient = { id: mockPatients.length + 1, ...req.body };
+    mockPatients.push(patient);
+    return res.json(patient);
+  }
+
+  if (req.method === 'DELETE' && /^\/patients\/([^/]+)$/.test(path)) {
+    const match = path.match(/^\/patients\/([^/]+)$/);
+    mockPatients = mockPatients.filter(p => p.id !== Number(match[1]));
+    return res.json({ success: true });
+  }
+
+  if (req.method === 'GET' && path === '/diagnoses') {
+    return res.json(mockDiagnoses);
+  }
+
+  if (req.method === 'GET' && path === '/patient/dashboard') {
+    return res.json({ profile: mockPatients[0], sessions: mockSessions.filter(s => !s.ended) });
+  }
+
+  if (req.method === 'POST' && path === '/patient/claim-device') {
+    const { deviceTag } = req.body || {};
+    const device = mockDevices.find(d => d.deviceTag === deviceTag || d.deviceId === deviceTag);
+    if (!device) return res.status(404).json({ error: 'Không tìm thấy thiết bị.' });
+    device.status = 'active';
+    device.patientId = mockPatients[0].id;
+    return res.json({ success: true, device });
+  }
+
+  return next();
+});
 
 // ============================================================
 // AUTHENTICATION ENDPOINTS
@@ -415,6 +615,7 @@ app.get('/api/sessions', requireAuth, requireRole(['doctor', 'admin']), async (r
         d.mac_address AS deviceId,
         (SELECT s.temperature FROM sensor_logs s WHERE s.patient_id = p.id ORDER BY s.recorded_at DESC LIMIT 1) AS lastTemp,
         (SELECT s.humidity FROM sensor_logs s WHERE s.patient_id = p.id ORDER BY s.recorded_at DESC LIMIT 1) AS lastHumid,
+        (SELECT s.room_temperature FROM sensor_logs s WHERE s.patient_id = p.id ORDER BY s.recorded_at DESC LIMIT 1) AS lastRoomTemp,
         (SELECT c.diagnosis_text FROM clinical_diagnoses c WHERE c.patient_id = p.id ORDER BY c.created_at DESC LIMIT 1) AS diagnosisText,
         (SELECT c.status FROM clinical_diagnoses c WHERE c.patient_id = p.id ORDER BY c.created_at DESC LIMIT 1) AS status,
         d.created_at AS createdAt
@@ -432,6 +633,7 @@ app.get('/api/sessions', requireAuth, requireRole(['doctor', 'admin']), async (r
       deviceId:        r.deviceId,
       temperature:     r.lastTemp ?? null,
       humidity:        r.lastHumid ?? null,
+      roomTemperature: r.lastRoomTemp ?? null,
       diagnosisText:   r.diagnosisText ?? 'Chưa có dữ liệu',
       status:          r.status ?? 'normal',
       createdAt:       r.createdAt,
@@ -479,7 +681,7 @@ app.patch('/api/sessions/:id/end', requireAuth, requireRole(['doctor', 'admin'])
 app.get('/api/sessions/:id/metrics', requireAuth, async (req, res) => {
   try {
     const [rows] = await pool.query(`
-      SELECT temperature, humidity, recorded_at AS recordedAt
+      SELECT temperature, humidity, room_temperature AS roomTemperature, recorded_at AS recordedAt
       FROM sensor_logs
       WHERE patient_id = ?
       ORDER BY recorded_at DESC LIMIT 60
@@ -488,6 +690,7 @@ app.get('/api/sessions/:id/metrics', requireAuth, async (req, res) => {
     res.json(rows.map(r => ({
       temperature: Number(r.temperature),
       humidity:    Number(r.humidity),
+      roomTemperature: r.roomTemperature != null ? Number(r.roomTemperature) : null,
       recordedAt:  r.recordedAt
     })).reverse());
   } catch (err) {
@@ -531,7 +734,7 @@ app.get('/api/patient/dashboard', requireAuth, requireRole(['patient']), async (
     const [[device]] = await pool.query('SELECT mac_address, device_tag FROM devices WHERE patient_id = ? LIMIT 1', [profile.id]);
 
     const [[latestLog]] = await pool.query(`
-      SELECT temperature, humidity, recorded_at 
+      SELECT temperature, humidity, room_temperature, recorded_at 
       FROM sensor_logs 
       WHERE patient_id = ? 
       ORDER BY recorded_at DESC LIMIT 1
@@ -550,6 +753,7 @@ app.get('/api/patient/dashboard', requireAuth, requireRole(['patient']), async (
       latestData: latestLog ? { 
         temperature: Number(latestLog.temperature), 
         humidity: Number(latestLog.humidity), 
+        roomTemperature: latestLog.room_temperature != null ? Number(latestLog.room_temperature) : null,
         time: latestLog.recorded_at 
       } : null,
       latestDiagnosis: latestDiagnosis ? { 
@@ -631,12 +835,16 @@ const PORT = process.env.PORT || 8000;
 async function startServer() {
   try {
     await ensureDeviceTagColumn();
+    await ensureRoomTemperatureColumn();
+    dbReady = true;
     server.listen(PORT, () =>
       console.log(`[Server] Urticaria Monitoring System listening at http://localhost:${PORT}`)
     );
   } catch (err) {
-    console.error('[Server] Không thể khởi động do lỗi DB:', err.message);
-    process.exit(1);
+    console.warn('[Server] Không thể kết nối DB, đang chạy ở chế độ demo:', err.message);
+    server.listen(PORT, () =>
+      console.log(`[Server] Urticaria Monitoring System listening at http://localhost:${PORT} (demo mode)`)
+    );
   }
 }
 
